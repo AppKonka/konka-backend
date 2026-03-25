@@ -1,0 +1,49 @@
+{
+  "name": "frontend",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "lint": "eslint .",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@hookform/resolvers": "^5.2.2",
+    "@supabase/supabase-js": "^2.100.0",
+    "@tanstack/react-query": "^5.95.2",
+    "@vis.gl/react-google-maps": "^1.7.1",
+    "axios": "^1.13.6",
+    "date-fns": "^4.1.0",
+    "framer-motion": "^12.38.0",
+    "leaflet": "^1.9.4",
+    "react": "^19.2.4",
+    "react-audio-player": "^0.17.0",
+    "react-dom": "^19.2.4",
+    "react-dropzone": "^15.0.0",
+    "react-hook-form": "^7.72.0",
+    "react-hot-toast": "^2.6.0",
+    "react-icons": "^5.6.0",
+    "react-leaflet": "^5.0.0",
+    "react-player": "^3.4.0",
+    "react-router-dom": "^7.13.2",
+    "simple-peer": "^9.11.1",
+    "socket.io-client": "^4.8.3",
+    "styled-components": "^6.3.12",
+    "swiper": "^12.1.2",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.4",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.1",
+    "eslint": "^9.39.4",
+    "eslint-plugin-react-hooks": "^7.0.1",
+    "eslint-plugin-react-refresh": "^0.5.2",
+    "globals": "^17.4.0",
+    "prettier": "^3.8.1",
+    "vite": "^8.0.1"
+  }
+}
