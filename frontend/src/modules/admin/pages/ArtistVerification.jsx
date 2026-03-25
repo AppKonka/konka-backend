@@ -225,7 +225,6 @@ const ArtistVerification = () => {
   const loadPendingArtists = async () => {
     setLoading(true)
     try {
-      // Récupérer les artistes en attente
       const { data: artists, error } = await supabase
         .from('artists')
         .select(`
@@ -239,7 +238,6 @@ const ArtistVerification = () => {
       
       setPendingArtists(artists || [])
       
-      // Calculer les stats
       const { data: allArtists } = await supabase
         .from('artists')
         .select('verification_status')
@@ -263,7 +261,6 @@ const ArtistVerification = () => {
 
   const handleVerify = async (artistId, userId, action) => {
     try {
-      // Mettre à jour le statut de l'artiste
       await supabase
         .from('artists')
         .update({ 
@@ -272,7 +269,6 @@ const ArtistVerification = () => {
         })
         .eq('id', artistId)
       
-      // Mettre à jour l'utilisateur
       await supabase
         .from('users')
         .update({ is_verified: action === 'approved' })
@@ -393,17 +389,17 @@ const ArtistVerification = () => {
                   <SocialLinks>
                     {artist.social_links.instagram && (
                       <SocialLink href={artist.social_links.instagram} target="_blank">
-                        <Instagram size={14} /> Instagram
+                        <InstagramIcon size={14} /> Instagram
                       </SocialLink>
                     )}
                     {artist.social_links.youtube && (
                       <SocialLink href={artist.social_links.youtube} target="_blank">
-                        <Youtube size={14} /> YouTube
+                        <YoutubeIcon size={14} /> YouTube
                       </SocialLink>
                     )}
                     {artist.social_links.twitter && (
                       <SocialLink href={artist.social_links.twitter} target="_blank">
-                        <Twitter size={14} /> Twitter
+                        <TwitterIcon size={14} /> Twitter
                       </SocialLink>
                     )}
                   </SocialLinks>
