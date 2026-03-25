@@ -128,14 +128,9 @@ const RoleSelection = () => {
       // Mettre à jour le contexte
       await updateProfile({ role: selectedRole })
       
-      // Rediriger vers l'étape suivante
-      if (selectedRole === 'fan') {
-        navigate('/fan/preferences')
-      } else if (selectedRole === 'artist') {
-        navigate('/artist/register')
-      } else if (selectedRole === 'seller') {
-        navigate('/seller/register')
-      }
+      // Rediriger vers le formulaire d'inscription avec le rôle en paramètre
+      navigate(`/register?role=${selectedRole}`)
+      
     } catch (error) {
       console.error('Error updating role:', error)
     } finally {

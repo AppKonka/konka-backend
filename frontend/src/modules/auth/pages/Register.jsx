@@ -1,6 +1,6 @@
 // src/modules/auth/pages/Register.jsx
 import React, { useState } from 'react'
-import { useNavigate, Link } from 'react-router-dom'
+import { useNavigate, Link, useSearchParams } from 'react-router-dom'
 import styled from 'styled-components'
 import { motion } from 'framer-motion'
 import { Button } from '../../shared/components/ui/Button'
@@ -76,6 +76,10 @@ const Register = () => {
   const theme = useTheme()
   const { register } = useAuth()
   
+  // Récupérer le rôle depuis l'URL (fan, artist ou seller)
+  const [searchParams] = useSearchParams()
+  const role = searchParams.get('role') || 'fan'
+  
   const [formData, setFormData] = useState({
     email: '',
     phone: '',
@@ -131,6 +135,7 @@ const Register = () => {
     
     setLoading(true)
     
+    // Utiliser le rôle récupéré de l'URL
     const result = await register(formData.email, formData.password, {
       username: formData.username,
       displayName: formData.displayName,
@@ -139,10 +144,11 @@ const Register = () => {
       gender: formData.gender,
       country: formData.country,
       city: formData.city,
-      role: 'fan', // Rôle par défaut, sera changé dans RoleSelection
+      role: role, // ← Utilise le rôle de l'URL
     })
     
     if (result.success) {
+      // Rediriger vers la sélection du rôle (qui sera déjà pré-rempli)
       navigate('/role-selection')
     }
     
@@ -154,7 +160,6 @@ const Register = () => {
       ...formData,
       [e.target.name]: e.target.value,
     })
-    // Effacer l'erreur du champ
     if (errors[e.target.name]) {
       setErrors({
         ...errors,

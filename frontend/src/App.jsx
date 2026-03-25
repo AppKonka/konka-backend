@@ -7,15 +7,9 @@ import { useAuth } from './modules/shared/context/AuthContext'
 import { Loader } from './modules/shared/components/ui/Loader'
 import { SafeArea } from './modules/shared/components/navigation/SafeArea'
 
-// ==================== CONFIGURATION ====================
-// Les valeurs sont maintenant lues depuis les variables d'environnement
-
 const CONFIG = {
-  // Supabase
   supabaseUrl: import.meta.env.VITE_SUPABASE_URL,
   supabaseAnonKey: import.meta.env.VITE_SUPABASE_ANON_KEY,
-  
-  // Firebase
   firebaseApiKey: import.meta.env.VITE_FIREBASE_API_KEY,
   firebaseAuthDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
   firebaseProjectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
@@ -23,15 +17,9 @@ const CONFIG = {
   firebaseMessagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
   firebaseAppId: import.meta.env.VITE_FIREBASE_APP_ID,
   firebaseVapidKey: import.meta.env.VITE_FIREBASE_VAPID_KEY,
-  
-  // Google Maps
   googleMapsApiKey: import.meta.env.VITE_GOOGLE_MAPS_API_KEY,
-  
-  // API
   apiUrl: import.meta.env.VITE_API_URL,
 }
-
-// ==================== LAZY LOADING DES PAGES ====================
 
 // Auth pages
 const Onboarding = lazy(() => import('./modules/auth/pages/Onboarding'))
@@ -99,19 +87,15 @@ const ReportContent = lazy(() => import('./modules/shared/pages/ReportContent'))
 const BlockUser = lazy(() => import('./modules/shared/pages/BlockUser'))
 const Contact = lazy(() => import('./modules/shared/pages/Contact'))
 
-// ==================== REACT QUERY CLIENT ====================
-
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      staleTime: 1000 * 60 * 5, // 5 minutes
+      staleTime: 1000 * 60 * 5,
       retry: 1,
       refetchOnWindowFocus: false,
     },
   },
 })
-
-// ==================== COMPOSANT PRINCIPAL ====================
 
 function App() {
   const { user, loading, userRole } = useAuth()
@@ -125,7 +109,7 @@ function App() {
       <SafeArea>
         <Suspense fallback={<Loader fullScreen />}>
           <Routes>
-            {/* ==================== ROUTES PUBLIQUES ==================== */}
+            {/* ROUTES PUBLIQUES */}
             <Route path="/" element={!user ? <Onboarding /> : <Navigate to={`/${userRole}/home`} />} />
             <Route path="/login" element={!user ? <Login /> : <Navigate to={`/${userRole}/home`} />} />
             <Route path="/register" element={!user ? <Register /> : <Navigate to="/role-selection" />} />
@@ -133,13 +117,12 @@ function App() {
             <Route path="/forgot-password" element={<ForgotPassword />} />
             <Route path="/reset-password" element={<ResetPassword />} />
             
-            {/* Routes publiques (sans auth) */}
             <Route path="/terms" element={<TermsOfService />} />
             <Route path="/privacy" element={<PrivacyPolicy />} />
             <Route path="/help" element={<HelpCenter />} />
             <Route path="/contact" element={<Contact />} />
 
-            {/* ==================== ROUTES FAN ==================== */}
+            {/* ROUTES FAN */}
             <Route path="/fan/home" element={user && userRole === 'fan' ? <FanHome /> : <Navigate to="/" />} />
             <Route path="/fan/feed" element={user && userRole === 'fan' ? <FanFeed /> : <Navigate to="/" />} />
             <Route path="/fan/messages" element={user && userRole === 'fan' ? <FanMessages /> : <Navigate to="/" />} />
@@ -165,7 +148,7 @@ function App() {
             <Route path="/fan/report" element={user && userRole === 'fan' ? <ReportContent /> : <Navigate to="/" />} />
             <Route path="/fan/blocked" element={user && userRole === 'fan' ? <BlockUser /> : <Navigate to="/" />} />
 
-            {/* ==================== ROUTES ARTISTE ==================== */}
+            {/* ROUTES ARTISTE */}
             <Route path="/artist/dashboard" element={user && userRole === 'artist' ? <ArtistDashboard /> : <Navigate to="/" />} />
             <Route path="/artist/music" element={user && userRole === 'artist' ? <ArtistMusicManagement /> : <Navigate to="/" />} />
             <Route path="/artist/live" element={user && userRole === 'artist' ? <ArtistLiveManagement /> : <Navigate to="/" />} />
@@ -174,14 +157,14 @@ function App() {
             <Route path="/artist/store" element={user && userRole === 'artist' ? <ArtistStoreManagement /> : <Navigate to="/" />} />
             <Route path="/artist/live/stream/:liveId" element={user && userRole === 'artist' ? <ArtistLiveStream /> : <Navigate to="/" />} />
 
-            {/* ==================== ROUTES VENDEUR ==================== */}
+            {/* ROUTES VENDEUR */}
             <Route path="/seller/dashboard" element={user && userRole === 'seller' ? <SellerDashboard /> : <Navigate to="/" />} />
             <Route path="/seller/products" element={user && userRole === 'seller' ? <SellerProductManagement /> : <Navigate to="/" />} />
             <Route path="/seller/orders" element={user && userRole === 'seller' ? <SellerOrderManagement /> : <Navigate to="/" />} />
             <Route path="/seller/analytics" element={user && userRole === 'seller' ? <SellerAnalytics /> : <Navigate to="/" />} />
             <Route path="/seller/settings" element={user && userRole === 'seller' ? <SellerSettings /> : <Navigate to="/" />} />
 
-            {/* ==================== ROUTES ADMIN ==================== */}
+            {/* ROUTES ADMIN */}
             <Route path="/admin" element={user && userRole === 'admin' ? <AdminDashboard /> : <Navigate to="/" />} />
             <Route path="/admin/users" element={user && userRole === 'admin' ? <AdminUserManagement /> : <Navigate to="/" />} />
             <Route path="/admin/moderation" element={user && userRole === 'admin' ? <AdminContentModeration /> : <Navigate to="/" />} />
@@ -191,12 +174,10 @@ function App() {
             <Route path="/admin/payments" element={user && userRole === 'admin' ? <AdminPaymentManagement /> : <Navigate to="/" />} />
             <Route path="/admin/settings" element={user && userRole === 'admin' ? <AdminSystemSettings /> : <Navigate to="/" />} />
 
-            {/* ==================== 404 ==================== */}
             <Route path="*" element={<Navigate to="/" />} />
           </Routes>
         </Suspense>
         
-        {/* Toaster pour les notifications */}
         <Toaster
           position="top-right"
           toastOptions={{
@@ -207,16 +188,10 @@ function App() {
               borderRadius: '12px',
             },
             success: {
-              iconTheme: {
-                primary: '#00C851',
-                secondary: '#fff',
-              },
+              iconTheme: { primary: '#00C851', secondary: '#fff' },
             },
             error: {
-              iconTheme: {
-                primary: '#FF4444',
-                secondary: '#fff',
-              },
+              iconTheme: { primary: '#FF4444', secondary: '#fff' },
             },
           }}
         />
