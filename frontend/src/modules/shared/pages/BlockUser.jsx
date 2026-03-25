@@ -7,7 +7,7 @@ import { Header } from '../components/layout/Header'
 import { Avatar } from '../components/ui/Avatar'
 import { Button } from '../components/ui/Button'
 import { useAuth } from '../context/AuthContext'
-import { supabase } from '../../config/supabase'
+import { supabase } from '../../../config/supabase'
 import { toast } from 'react-hot-toast'
 
 const Container = styled.div`
