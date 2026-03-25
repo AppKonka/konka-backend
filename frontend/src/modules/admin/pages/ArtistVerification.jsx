@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react'
 import styled from 'styled-components'
 import { motion } from 'framer-motion'
-import { CheckCircle, XCircle, Eye, Download, Calendar, Music, Globe, InstagramIcon, YoutubeIcon, TwitterIcon } from 'lucide-react'
+import { CheckCircle, XCircle, Eye, Download, Calendar, Music, Globe } from 'lucide-react'
 import { supabase } from '../../../config/supabase'
 import { toast } from 'react-hot-toast'
 
@@ -157,6 +157,7 @@ const SocialLinks = styled.div`
   display: flex;
   gap: 12px;
   margin-top: 12px;
+  flex-wrap: wrap;
 `
 
 const SocialLink = styled.a`
@@ -166,6 +167,9 @@ const SocialLink = styled.a`
   font-size: 12px;
   color: ${props => props.theme.primary};
   text-decoration: none;
+  padding: 4px 8px;
+  background: ${props => props.theme.background};
+  border-radius: 16px;
 `
 
 const ActionButtons = styled.div`
@@ -388,18 +392,18 @@ const ArtistVerification = () => {
                 {artist.social_links && Object.keys(artist.social_links).length > 0 && (
                   <SocialLinks>
                     {artist.social_links.instagram && (
-                      <SocialLink href={artist.social_links.instagram} target="_blank">
-                        <InstagramIcon size={14} /> Instagram
+                      <SocialLink href={artist.social_links.instagram} target="_blank" rel="noopener noreferrer">
+                        📷 Instagram
                       </SocialLink>
                     )}
                     {artist.social_links.youtube && (
-                      <SocialLink href={artist.social_links.youtube} target="_blank">
-                        <YoutubeIcon size={14} /> YouTube
+                      <SocialLink href={artist.social_links.youtube} target="_blank" rel="noopener noreferrer">
+                        🎵 YouTube
                       </SocialLink>
                     )}
                     {artist.social_links.twitter && (
-                      <SocialLink href={artist.social_links.twitter} target="_blank">
-                        <TwitterIcon size={14} /> Twitter
+                      <SocialLink href={artist.social_links.twitter} target="_blank" rel="noopener noreferrer">
+                        🐦 Twitter
                       </SocialLink>
                     )}
                   </SocialLinks>
