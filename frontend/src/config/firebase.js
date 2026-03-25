@@ -1,5 +1,7 @@
-// frontend/src/config/firebase.js
+// src/config/firebase.js
 import { initializeApp } from 'firebase/app'
+import { getAuth } from 'firebase/auth'
+import { getStorage } from 'firebase/storage'
 import { getMessaging, getToken, onMessage } from 'firebase/messaging'
 
 const firebaseConfig = {
@@ -11,40 +13,33 @@ const firebaseConfig = {
   appId: import.meta.env.VITE_FIREBASE_APP_ID,
 }
 
-// Initialiser Firebase
 const app = initializeApp(firebaseConfig)
 
-// Initialiser Cloud Messaging
+export const auth = getAuth(app)
+export const storage = getStorage(app)
+
+// Messaging (pour notifications push)
 let messaging = null
 if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
   messaging = getMessaging(app)
 }
 
-// Demander la permission et obtenir le token FCM
-export const requestNotificationPermission = async () => {
+export const getFCMToken = async () => {
   if (!messaging) return null
-  
   try {
-    const permission = await Notification.requestPermission()
-    if (permission === 'granted') {
-      const token = await getToken(messaging, {
-        vapidKey: import.meta.env.VITE_FIREBASE_VAPID_KEY,
-      })
-      return token
-    }
-    return null
+    const token = await getToken(messaging, {
+      vapidKey: import.meta.env.VITE_FIREBASE_VAPID_KEY,
+    })
+    return token
   } catch (error) {
-    console.error('Error getting notification permission:', error)
+    console.error('Error getting FCM token:', error)
     return null
   }
 }
 
-// Écouter les messages en premier plan
 export const onForegroundMessage = (callback) => {
   if (!messaging) return
-  
   onMessage(messaging, (payload) => {
-    console.log('Foreground message:', payload)
     callback(payload)
   })
 }

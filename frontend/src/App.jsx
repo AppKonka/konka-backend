@@ -8,28 +8,27 @@ import { Loader } from './modules/shared/components/ui/Loader'
 import { SafeArea } from './modules/shared/components/navigation/SafeArea'
 
 // ==================== CONFIGURATION ====================
-// Ces valeurs seront remplacées par vos clés réelles
-// À remplacer après avoir récupéré vos clés
+// Les valeurs sont maintenant lues depuis les variables d'environnement
 
 const CONFIG = {
   // Supabase
-  supabaseUrl: 'VITE_SUPABASE_URL',      // ← À remplacer
-  supabaseAnonKey: 'VITE_SUPABASE_ANON_KEY', // ← À remplacer
+  supabaseUrl: import.meta.env.VITE_SUPABASE_URL,
+  supabaseAnonKey: import.meta.env.VITE_SUPABASE_ANON_KEY,
   
   // Firebase
-  firebaseApiKey: 'VITE_FIREBASE_API_KEY',           // ← À remplacer
-  firebaseAuthDomain: 'VITE_FIREBASE_AUTH_DOMAIN',   // ← À remplacer
-  firebaseProjectId: 'VITE_FIREBASE_PROJECT_ID',     // ← À remplacer
-  firebaseStorageBucket: 'VITE_FIREBASE_STORAGE_BUCKET', // ← À remplacer
-  firebaseMessagingSenderId: 'VITE_FIREBASE_MESSAGING_SENDER_ID', // ← À remplacer
-  firebaseAppId: 'VITE_FIREBASE_APP_ID',             // ← À remplacer
-  firebaseVapidKey: 'VITE_FIREBASE_VAPID_KEY',       // ← À remplacer
+  firebaseApiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+  firebaseAuthDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+  firebaseProjectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+  firebaseStorageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+  firebaseMessagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+  firebaseAppId: import.meta.env.VITE_FIREBASE_APP_ID,
+  firebaseVapidKey: import.meta.env.VITE_FIREBASE_VAPID_KEY,
   
   // Google Maps
-  googleMapsApiKey: 'VITE_GOOGLE_MAPS_API_KEY',      // ← À remplacer
+  googleMapsApiKey: import.meta.env.VITE_GOOGLE_MAPS_API_KEY,
   
   // API
-  apiUrl: 'VITE_API_URL',                            // ← À remplacer
+  apiUrl: import.meta.env.VITE_API_URL,
 }
 
 // ==================== LAZY LOADING DES PAGES ====================
