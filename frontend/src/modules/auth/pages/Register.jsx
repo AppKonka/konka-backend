@@ -1,5 +1,5 @@
 // src/modules/auth/pages/Register.jsx
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { useNavigate, Link, useSearchParams } from 'react-router-dom'
 import styled from 'styled-components'
 import { motion } from 'framer-motion'
@@ -76,9 +76,8 @@ const Register = () => {
   const theme = useTheme()
   const { register } = useAuth()
   
-  // Récupérer le rôle depuis l'URL (fan, artist ou seller)
   const [searchParams] = useSearchParams()
-  const role = searchParams.get('role') || 'fan'
+  const role = searchParams.get('role')
   
   const [formData, setFormData] = useState({
     email: '',
@@ -95,6 +94,13 @@ const Register = () => {
   
   const [errors, setErrors] = useState({})
   const [loading, setLoading] = useState(false)
+
+  // Si aucun rôle n'est spécifié, rediriger vers le choix du rôle
+  useEffect(() => {
+    if (!role) {
+      navigate('/role-selection')
+    }
+  }, [role, navigate])
 
   const validateForm = () => {
     const newErrors = {}
@@ -135,7 +141,6 @@ const Register = () => {
     
     setLoading(true)
     
-    // Utiliser le rôle récupéré de l'URL
     const result = await register(formData.email, formData.password, {
       username: formData.username,
       displayName: formData.displayName,
@@ -144,11 +149,10 @@ const Register = () => {
       gender: formData.gender,
       country: formData.country,
       city: formData.city,
-      role: role, // ← Utilise le rôle de l'URL
+      role: role,
     })
     
     if (result.success) {
-      // Rediriger vers la sélection du rôle (qui sera déjà pré-rempli)
       navigate('/role-selection')
     }
     
@@ -174,7 +178,7 @@ const Register = () => {
         ←
       </BackButton>
       
-      <Title>Créer un compte</Title>
+      <Title>Créer un compte {role && `en tant que ${role === 'fan' ? 'Fan' : role === 'artist' ? 'Artiste' : 'Vendeur'}`}</Title>
       <Subtitle>Rejoins la communauté Konka</Subtitle>
       
       <Form onSubmit={handleSubmit}>
