@@ -128,8 +128,14 @@ const RoleSelection = () => {
       // Mettre à jour le contexte
       await updateProfile({ role: selectedRole })
       
-      // Rediriger vers le formulaire d'inscription avec le rôle en paramètre
-      navigate(`/register?role=${selectedRole}`)
+      // Rediriger vers les pages qui EXISTENT dans l'application
+      if (selectedRole === 'fan') {
+        navigate('/fan/home')
+      } else if (selectedRole === 'artist') {
+        navigate('/artist/dashboard')
+      } else if (selectedRole === 'seller') {
+        navigate('/seller/dashboard')
+      }
       
     } catch (error) {
       console.error('Error updating role:', error)
