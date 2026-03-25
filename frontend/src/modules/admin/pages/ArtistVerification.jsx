@@ -2,10 +2,7 @@
 import React, { useState, useEffect } from 'react'
 import styled from 'styled-components'
 import { motion } from 'framer-motion'
-import { 
-  CheckCircle, XCircle, Eye, Download, 
-  Calendar, Music, Globe, Instagram, Youtube, Twitter
-} from 'lucide-react'
+import { CheckCircle, XCircle, Eye, Download, Calendar, Music, Globe, InstagramIcon, YoutubeIcon, TwitterIcon } from 'lucide-react'
 import { supabase } from '../../../config/supabase'
 import { toast } from 'react-hot-toast'
 
