@@ -1,4 +1,4 @@
-// src/App.jsx
+// frontend/src/App.jsx
 import React, { Suspense, lazy } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
@@ -109,20 +109,22 @@ function App() {
       <SafeArea>
         <Suspense fallback={<Loader fullScreen />}>
           <Routes>
-            {/* ROUTES PUBLIQUES */}
+            {/* ==================== ROUTES PUBLIQUES ==================== */}
+            {/* L'ordre est important : le choix du rôle vient AVANT l'inscription */}
             <Route path="/" element={!user ? <Onboarding /> : <Navigate to={`/${userRole}/home`} />} />
             <Route path="/login" element={!user ? <Login /> : <Navigate to={`/${userRole}/home`} />} />
+            <Route path="/role-selection" element={!user ? <RoleSelection /> : <Navigate to={`/${userRole}/home`} />} />
             <Route path="/register" element={!user ? <Register /> : <Navigate to="/role-selection" />} />
-            <Route path="/role-selection" element={user && !userRole ? <RoleSelection /> : <Navigate to={`/${userRole}/home`} />} />
             <Route path="/forgot-password" element={<ForgotPassword />} />
             <Route path="/reset-password" element={<ResetPassword />} />
             
+            {/* Routes publiques (sans auth) */}
             <Route path="/terms" element={<TermsOfService />} />
             <Route path="/privacy" element={<PrivacyPolicy />} />
             <Route path="/help" element={<HelpCenter />} />
             <Route path="/contact" element={<Contact />} />
 
-            {/* ROUTES FAN */}
+            {/* ==================== ROUTES FAN ==================== */}
             <Route path="/fan/home" element={user && userRole === 'fan' ? <FanHome /> : <Navigate to="/" />} />
             <Route path="/fan/feed" element={user && userRole === 'fan' ? <FanFeed /> : <Navigate to="/" />} />
             <Route path="/fan/messages" element={user && userRole === 'fan' ? <FanMessages /> : <Navigate to="/" />} />
@@ -148,7 +150,7 @@ function App() {
             <Route path="/fan/report" element={user && userRole === 'fan' ? <ReportContent /> : <Navigate to="/" />} />
             <Route path="/fan/blocked" element={user && userRole === 'fan' ? <BlockUser /> : <Navigate to="/" />} />
 
-            {/* ROUTES ARTISTE */}
+            {/* ==================== ROUTES ARTISTE ==================== */}
             <Route path="/artist/dashboard" element={user && userRole === 'artist' ? <ArtistDashboard /> : <Navigate to="/" />} />
             <Route path="/artist/music" element={user && userRole === 'artist' ? <ArtistMusicManagement /> : <Navigate to="/" />} />
             <Route path="/artist/live" element={user && userRole === 'artist' ? <ArtistLiveManagement /> : <Navigate to="/" />} />
@@ -157,14 +159,14 @@ function App() {
             <Route path="/artist/store" element={user && userRole === 'artist' ? <ArtistStoreManagement /> : <Navigate to="/" />} />
             <Route path="/artist/live/stream/:liveId" element={user && userRole === 'artist' ? <ArtistLiveStream /> : <Navigate to="/" />} />
 
-            {/* ROUTES VENDEUR */}
+            {/* ==================== ROUTES VENDEUR ==================== */}
             <Route path="/seller/dashboard" element={user && userRole === 'seller' ? <SellerDashboard /> : <Navigate to="/" />} />
             <Route path="/seller/products" element={user && userRole === 'seller' ? <SellerProductManagement /> : <Navigate to="/" />} />
             <Route path="/seller/orders" element={user && userRole === 'seller' ? <SellerOrderManagement /> : <Navigate to="/" />} />
             <Route path="/seller/analytics" element={user && userRole === 'seller' ? <SellerAnalytics /> : <Navigate to="/" />} />
             <Route path="/seller/settings" element={user && userRole === 'seller' ? <SellerSettings /> : <Navigate to="/" />} />
 
-            {/* ROUTES ADMIN */}
+            {/* ==================== ROUTES ADMIN ==================== */}
             <Route path="/admin" element={user && userRole === 'admin' ? <AdminDashboard /> : <Navigate to="/" />} />
             <Route path="/admin/users" element={user && userRole === 'admin' ? <AdminUserManagement /> : <Navigate to="/" />} />
             <Route path="/admin/moderation" element={user && userRole === 'admin' ? <AdminContentModeration /> : <Navigate to="/" />} />
@@ -174,10 +176,12 @@ function App() {
             <Route path="/admin/payments" element={user && userRole === 'admin' ? <AdminPaymentManagement /> : <Navigate to="/" />} />
             <Route path="/admin/settings" element={user && userRole === 'admin' ? <AdminSystemSettings /> : <Navigate to="/" />} />
 
+            {/* ==================== 404 ==================== */}
             <Route path="*" element={<Navigate to="/" />} />
           </Routes>
         </Suspense>
         
+        {/* Toaster pour les notifications */}
         <Toaster
           position="top-right"
           toastOptions={{
