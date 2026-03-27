@@ -44,7 +44,7 @@ yarl==1.23.0
 sendgrid==6.12.5
 twilio==9.10.4
 stripe==15.0.0
-firebase_admin==7.3.0
+
 openai==2.30.0
 
 # AWS
