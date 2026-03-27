@@ -4,7 +4,7 @@
 fastapi==0.135.2
 uvicorn[standard]==0.42.0
 
-# Supabase et dépendances - version compatible
+# Supabase et dépendances
 supabase==2.5.0
 postgrest==0.16.11
 gotrue==2.12.4
@@ -27,7 +27,7 @@ pydantic_core==2.41.5
 typing_extensions==4.15.0
 typing-inspection==0.4.2
 
-# HTTP Client - Version unifiée
+# HTTP Client
 httpx==0.27.2
 httpcore==1.0.9
 requests==2.33.0
@@ -132,3 +132,6 @@ numpy==2.4.3
 h2==4.3.0
 hpack==4.1.0
 hyperframe==6.1.0
+
+# Validation email (AJOUTÉ)
+email-validator==2.3.0
