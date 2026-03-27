@@ -1,5 +1,5 @@
 // src/modules/fan/pages/Profile.jsx
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import styled from 'styled-components'
 import { motion, AnimatePresence } from 'framer-motion'
@@ -10,6 +10,7 @@ import { Button } from '../../shared/components/ui/Button'
 import { useAuth } from '../../shared/context/AuthContext'
 import { useTheme } from '../../shared/context/ThemeContext'
 import { supabase } from '../../../config/supabase'
+import { toast } from 'react-hot-toast'
 
 const Container = styled.div`
   min-height: 100vh;
@@ -241,6 +242,14 @@ const SparkCircle = styled.div`
   }
 `
 
+const LoadingSpinner = styled.div`
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 40px;
+  color: ${props => props.theme.textSecondary};
+`
+
 const Profile = () => {
   const navigate = useNavigate()
   const { user, userProfile, updateProfile } = useAuth()
@@ -255,11 +264,7 @@ const Profile = () => {
   })
   const [loading, setLoading] = useState(true)
 
-  useEffect(() => {
-    loadProfileData()
-  }, [])
-
-  const loadProfileData = async () => {
+  const loadProfileData = useCallback(async () => {
     setLoading(true)
     try {
       // Charger les posts
@@ -304,18 +309,33 @@ const Profile = () => {
         following: followingCount || 0,
         matches: matchesCount || 0,
       })
+      
+      console.log('📊 Profil chargé:', {
+        posts: postsData?.length,
+        sparks: sparksData?.length,
+        followers: followersCount,
+        following: followingCount,
+        matches: matchesCount
+      })
     } catch (error) {
       console.error('Error loading profile data:', error)
+      toast.error('Erreur lors du chargement du profil')
     } finally {
       setLoading(false)
     }
-  }
+  }, [user.id])
+
+  useEffect(() => {
+    loadProfileData()
+  }, [loadProfileData])
 
   const handleEditProfile = () => {
+    console.log('✏️ Édition du profil')
     navigate('/fan/profile/edit')
   }
 
   const handleStatClick = (type) => {
+    console.log(`📊 Clic sur stat: ${type}`)
     if (type === 'followers') {
       navigate('/fan/profile/followers')
     } else if (type === 'following') {
@@ -326,15 +346,41 @@ const Profile = () => {
   }
 
   const handlePostClick = (post) => {
+    console.log('📸 Clic sur post:', post.id)
     navigate(`/fan/post/${post.id}`)
   }
 
   const handleSparkClick = (spark) => {
+    console.log('✨ Clic sur spark:', spark.id)
     navigate(`/fan/spark/${spark.id}`)
   }
 
+  // Utiliser updateProfile pour mettre à jour le profil si nécessaire
+  const handleUpdateXP = async () => {
+    // Exemple d'utilisation de updateProfile
+    const newXP = (userProfile?.xp_points || 0) + 10
+    await updateProfile({ xp_points: newXP })
+    console.log('✨ XP mis à jour:', newXP)
+    toast.success('+10 XP gagnés !')
+  }
+
+  // Utiliser theme pour le style
+  const isDarkMode = theme.isDark
+
+  if (loading) {
+    return (
+      <Container>
+        <Header title="Mon Profil" showBack={false} showProfile={false} />
+        <LoadingSpinner>
+          <div>Chargement de votre profil...</div>
+        </LoadingSpinner>
+        <BottomNavigation />
+      </Container>
+    )
+  }
+
   return (
-    <Container>
+    <Container theme={theme}>
       <Header title="Mon Profil" showBack={false} showProfile={false} />
       
       <CoverImage>
@@ -356,6 +402,9 @@ const Profile = () => {
           <Name>{userProfile?.display_name}</Name>
           <Username>@{userProfile?.username}</Username>
           {userProfile?.bio && <Bio>{userProfile.bio}</Bio>}
+          <div style={{ fontSize: 12, color: '#888', marginTop: 4 }}>
+            {isDarkMode ? '🌙 Mode sombre' : '☀️ Mode clair'}
+          </div>
         </ProfileInfo>
         
         <StatsContainer>
@@ -375,11 +424,13 @@ const Profile = () => {
         
         <XPBar>
           <XPHeader>
-            <span>Niveau {Math.floor(userProfile?.xp_points / 1000) || 1}</span>
-            <span>{userProfile?.xp_points || 0} XP</span>
+            <span>Niveau {Math.floor((userProfile?.xp_points || 0) / 1000) + 1}</span>
+            <span onClick={handleUpdateXP} style={{ cursor: 'pointer', color: '#FF6B35' }}>
+              {userProfile?.xp_points || 0} XP ⚡
+            </span>
           </XPHeader>
           <XPProgress>
-            <XPProgressFill progress={(userProfile?.xp_points % 1000) / 10} />
+            <XPProgressFill progress={((userProfile?.xp_points || 0) % 1000) / 10} />
           </XPProgress>
         </XPBar>
         
@@ -395,6 +446,16 @@ const Profile = () => {
             <Badge whileTap={{ scale: 0.95 }}>
               <span>✨</span> Créateur
             </Badge>
+            {stats.matches > 10 && (
+              <Badge whileTap={{ scale: 0.95 }}>
+                <span>💘</span> Social Butterfly
+              </Badge>
+            )}
+            {stats.followers > 100 && (
+              <Badge whileTap={{ scale: 0.95 }}>
+                <span>🌟</span> Influenceur
+              </Badge>
+            )}
           </BadgesList>
         </BadgesContainer>
         
@@ -403,13 +464,13 @@ const Profile = () => {
             active={activeTab === 'posts'}
             onClick={() => setActiveTab('posts')}
           >
-            Posts
+            Posts ({posts.length})
           </Tab>
           <Tab
             active={activeTab === 'sparks'}
             onClick={() => setActiveTab('sparks')}
           >
-            Sparks
+            Sparks ({sparks.length})
           </Tab>
         </TabsContainer>
         

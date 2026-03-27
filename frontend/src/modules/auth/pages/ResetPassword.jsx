@@ -9,7 +9,7 @@ import { supabase } from '../../../config/supabase'
 import { useTheme } from '../../shared/context/ThemeContext'
 import { toast } from 'react-hot-toast'
 
-const Container = styled.div`
+const Container = styled(motion.div)`
   min-height: 100vh;
   padding: 40px 20px;
   background: ${props => props.theme.background};
@@ -17,16 +17,26 @@ const Container = styled.div`
   flex-direction: column;
 `
 
-const BackButton = styled.button`
+const BackButton = styled(motion.button)`
   background: none;
   border: none;
   font-size: 24px;
   cursor: pointer;
   margin-bottom: 40px;
   color: ${props => props.theme.text};
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 20px;
+  
+  &:hover {
+    background: ${props => props.theme.border}40;
+  }
 `
 
-const Logo = styled.div`
+const Logo = styled(motion.div)`
   text-align: center;
   margin-bottom: 48px;
   
@@ -40,25 +50,59 @@ const Logo = styled.div`
   }
 `
 
-const Title = styled.h2`
+const Title = styled(motion.h2)`
   font-size: 28px;
   font-weight: 700;
   margin-bottom: 8px;
   text-align: center;
+  color: ${props => props.theme.text};
 `
 
-const Subtitle = styled.p`
+const Subtitle = styled(motion.p)`
   font-size: 14px;
   color: ${props => props.theme.textSecondary};
   text-align: center;
   margin-bottom: 32px;
 `
 
-const Form = styled.form`
+const Form = styled(motion.form)`
   display: flex;
   flex-direction: column;
   gap: 16px;
   margin-bottom: 24px;
+`
+
+const SuccessContainer = styled(motion.div)`
+  text-align: center;
+  padding: 30px 20px;
+  background: ${props => props.theme.surface};
+  border-radius: 24px;
+  margin: 20px 0;
+`
+
+const IconWrapper = styled(motion.div)`
+  font-size: 64px;
+  margin-bottom: 20px;
+`
+
+const LinkContainer = styled(motion.div)`
+  text-align: center;
+  margin-top: 24px;
+  
+  a {
+    color: ${props => props.theme.primary};
+    text-decoration: none;
+    font-weight: 500;
+    
+    &:hover {
+      text-decoration: underline;
+    }
+  }
+`
+
+const InvalidContainer = styled(motion.div)`
+  text-align: center;
+  padding: 40px 20px;
 `
 
 const ResetPassword = () => {
@@ -112,31 +156,98 @@ const ResetPassword = () => {
 
   if (!token) {
     return (
-      <Container theme={theme}>
-        <BackButton onClick={() => navigate('/login')}>←</BackButton>
-        <Logo><h1>KONKA</h1></Logo>
-        <Title>Lien invalide</Title>
-        <Subtitle>Le lien de réinitialisation est invalide ou a expiré.</Subtitle>
-        <Button onClick={() => navigate('/forgot-password')}>
-          Demander un nouveau lien
-        </Button>
+      <Container
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        transition={{ duration: 0.3 }}
+        theme={theme}
+      >
+        <BackButton
+          onClick={() => navigate('/login')}
+          whileTap={{ scale: 0.95 }}
+          whileHover={{ scale: 1.05 }}
+          theme={theme}
+        >
+          ←
+        </BackButton>
+        
+        <Logo
+          initial={{ opacity: 0, y: -20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5 }}
+        >
+          <h1>KONKA</h1>
+        </Logo>
+        
+        <InvalidContainer
+          initial={{ opacity: 0, scale: 0.9 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ duration: 0.5 }}
+        >
+          <div style={{ fontSize: 64, marginBottom: 16 }}>🔗</div>
+          <Title>Lien invalide</Title>
+          <Subtitle>Le lien de réinitialisation est invalide ou a expiré.</Subtitle>
+          <Button
+            onClick={() => navigate('/forgot-password')}
+            whileTap={{ scale: 0.98 }}
+            style={{ marginTop: 24 }}
+          >
+            Demander un nouveau lien
+          </Button>
+        </InvalidContainer>
       </Container>
     )
   }
 
   return (
-    <Container theme={theme}>
-      <BackButton onClick={() => navigate('/login')}>←</BackButton>
+    <Container
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.3 }}
+      theme={theme}
+    >
+      <BackButton
+        onClick={() => navigate('/login')}
+        whileTap={{ scale: 0.95 }}
+        whileHover={{ scale: 1.05 }}
+        theme={theme}
+      >
+        ←
+      </BackButton>
       
-      <Logo>
+      <Logo
+        initial={{ opacity: 0, y: -20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.5 }}
+      >
         <h1>KONKA</h1>
       </Logo>
       
-      <Title>Nouveau mot de passe</Title>
-      <Subtitle>Créez un nouveau mot de passe sécurisé</Subtitle>
+      <Title
+        initial={{ opacity: 0, y: -10 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.5, delay: 0.1 }}
+      >
+        Nouveau mot de passe
+      </Title>
+      
+      <Subtitle
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ duration: 0.5, delay: 0.2 }}
+      >
+        Créez un nouveau mot de passe sécurisé
+      </Subtitle>
       
       {!success ? (
-        <Form onSubmit={handleSubmit}>
+        <Form
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5, delay: 0.3 }}
+          onSubmit={handleSubmit}
+        >
           <Input
             type="password"
             placeholder="Nouveau mot de passe"
@@ -153,25 +264,46 @@ const ResetPassword = () => {
             icon="🔒"
           />
           
-          <Button type="submit" fullWidth loading={loading}>
+          <Button
+            type="submit"
+            fullWidth
+            loading={loading}
+            whileTap={{ scale: 0.98 }}
+          >
             Réinitialiser
           </Button>
         </Form>
       ) : (
-        <div style={{ textAlign: 'center', padding: 20 }}>
-          <div style={{ fontSize: 48, marginBottom: 16 }}>✅</div>
-          <p>Votre mot de passe a été réinitialisé avec succès !</p>
-          <p style={{ fontSize: 14, marginTop: 8, color: '#888' }}>
+        <SuccessContainer
+          initial={{ opacity: 0, scale: 0.9 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ duration: 0.5, type: 'spring', stiffness: 300 }}
+        >
+          <IconWrapper
+            initial={{ scale: 0 }}
+            animate={{ scale: 1 }}
+            transition={{ type: 'spring', stiffness: 400, damping: 10 }}
+          >
+            ✅
+          </IconWrapper>
+          <p style={{ marginBottom: 8, fontSize: 16 }}>
+            Votre mot de passe a été réinitialisé avec succès !
+          </p>
+          <p style={{ fontSize: 14, color: '#888' }}>
             Redirection vers la page de connexion...
           </p>
-        </div>
+        </SuccessContainer>
       )}
       
-      <div style={{ textAlign: 'center', marginTop: 24 }}>
+      <LinkContainer
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ duration: 0.5, delay: 0.4 }}
+      >
         <Link to="/login" style={{ color: theme.colors.primary }}>
           Retour à la connexion
         </Link>
-      </div>
+      </LinkContainer>
     </Container>
   )
 }

@@ -1,5 +1,5 @@
 // src/modules/admin/pages/AnalyticsDashboard.jsx
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import styled from 'styled-components'
 import { motion } from 'framer-motion'
 import {
@@ -23,6 +23,7 @@ import {
   Legend,
   ResponsiveContainer
 } from 'recharts'
+import { toast } from 'react-hot-toast'
 
 const Container = styled.div`
   min-height: 100vh;
@@ -177,12 +178,9 @@ const AnalyticsDashboard = () => {
   const [topGenres, setTopGenres] = useState([])
   const [topArtists, setTopArtists] = useState([])
   const [hourlyActivity, setHourlyActivity] = useState([])
+  const [newUsersGrowth, setNewUsersGrowth] = useState(0)
 
-  useEffect(() => {
-    loadAnalytics()
-  }, [period])
-
-  const loadAnalytics = async () => {
+  const loadAnalytics = useCallback(async () => {
     setLoading(true)
     try {
       // Calculer les dates
@@ -218,6 +216,12 @@ const AnalyticsDashboard = () => {
         .select('created_at')
         .gte('created_at', previousStartDate.toISOString())
         .lt('created_at', startDate.toISOString())
+      
+      // Calculer la croissance des nouveaux utilisateurs
+      const newUsersCount = newUsers?.length || 0
+      const previousNewUsers = previousUsers?.length || 0
+      const growthRate = previousNewUsers ? ((newUsersCount - previousNewUsers) / previousNewUsers * 100) : 0
+      setNewUsersGrowth(growthRate)
       
       // Croissance par jour
       const dailyGrowth = {}
@@ -282,14 +286,18 @@ const AnalyticsDashboard = () => {
       
       setTopGenres(topGenresData)
       
-      // Top artistes
-      const { data: artists } = await supabase
+      // Top artistes (avec noms)
+      const { data: tracksWithArtists } = await supabase
         .from('tracks')
-        .select('artist_id, artist:users(username)')
+        .select('artist_id, play_count, artist:users(username, display_name)')
         .order('play_count', { ascending: false })
         .limit(5)
       
-      setTopArtists(artists || [])
+      const topArtistsData = tracksWithArtists?.map(track => ({
+        artist_name: track.artist?.display_name || track.artist?.username || 'Artiste inconnu',
+        play_count: track.play_count || 0
+      })) || []
+      setTopArtists(topArtistsData)
       
       // Activité horaire
       const { data: allUsers } = await supabase
@@ -322,10 +330,6 @@ const AnalyticsDashboard = () => {
         supabase.from('comments').select('id', { count: 'exact' }),
         supabase.from('shares').select('id', { count: 'exact' })
       ])
-      
-      const newUsersCount = newUsers?.length || 0
-      const previousNewUsers = previousUsers?.length || 0
-      const newUsersGrowth = previousNewUsers ? ((newUsersCount - previousNewUsers) / previousNewUsers * 100) : 0
       
       const totalOrders = orders?.length || 0
       const previousOrders = (await supabase
@@ -367,16 +371,54 @@ const AnalyticsDashboard = () => {
         }
       })
       
+      console.log('📊 Analytics chargés:', {
+        period,
+        totalUsers: (await supabase.from('users').select('id', { count: 'exact' })).count || 0,
+        totalRevenue,
+        timestamp: new Date().toISOString()
+      })
+      
     } catch (error) {
       console.error('Error loading analytics:', error)
+      toast.error('Erreur lors du chargement des analyses')
     } finally {
       setLoading(false)
     }
-  }
+  }, [period])
+
+  useEffect(() => {
+    loadAnalytics()
+  }, [loadAnalytics])
 
   const handleExport = () => {
     // Exporter les données en CSV
-    console.log('Export analytics')
+    const csvData = [
+      ['Métrique', 'Valeur'],
+      ['Utilisateurs totaux', stats.totalUsers],
+      ['Nouveaux utilisateurs', stats.newUsers],
+      ['Utilisateurs actifs', stats.activeUsers],
+      ['Chiffre d\'affaires', stats.totalRevenue],
+      ['Commandes', stats.totalOrders],
+      ['Morceaux', stats.totalTracks],
+      ['Matchs', stats.totalMatches],
+      ['Likes', stats.engagement.likes],
+      ['Commentaires', stats.engagement.comments],
+      ['Partages', stats.engagement.shares]
+    ]
+    
+    const csvContent = csvData.map(row => row.join(',')).join('\n')
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
+    const link = document.createElement('a')
+    const url = URL.createObjectURL(blob)
+    link.setAttribute('href', url)
+    link.setAttribute('download', `analytics_${period}_${new Date().toISOString().split('T')[0]}.csv`)
+    link.style.visibility = 'hidden'
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    
+    toast.success('Export CSV effectué')
+    console.log('📥 Export analytics CSV')
   }
 
   if (loading) {
@@ -416,6 +458,9 @@ const AnalyticsDashboard = () => {
           <StatLabel>Utilisateurs totaux</StatLabel>
           <StatChange positive={stats.newUsers > 0}>
             <TrendingUp size={12} /> +{stats.newUsers} nouveaux
+          </StatChange>
+          <StatChange positive={newUsersGrowth > 0} style={{ marginTop: 4 }}>
+            {newUsersGrowth > 0 ? '↑' : '↓'} {Math.abs(newUsersGrowth).toFixed(1)}% vs période précédente
           </StatChange>
         </StatCard>
         
@@ -563,6 +608,31 @@ const AnalyticsDashboard = () => {
         
         <ChartCard>
           <ChartTitle>
+            <Music size={18} /> Top artistes
+          </ChartTitle>
+          <ChartContainer>
+            {topArtists.length > 0 ? (
+              <ResponsiveContainer width="100%" height="100%">
+                <ReBarChart data={topArtists} layout="vertical">
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis type="number" />
+                  <YAxis type="category" dataKey="artist_name" width={120} />
+                  <Tooltip />
+                  <Bar dataKey="play_count" fill="#FF6B35" />
+                </ReBarChart>
+              </ResponsiveContainer>
+            ) : (
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#888' }}>
+                Aucune donnée disponible
+              </div>
+            )}
+          </ChartContainer>
+        </ChartCard>
+      </ChartRow>
+      
+      <ChartRow>
+        <ChartCard>
+          <ChartTitle>
             <Heart size={18} /> Engagement utilisateurs
           </ChartTitle>
           <ChartContainer>
@@ -588,6 +658,27 @@ const AnalyticsDashboard = () => {
                 </Pie>
                 <Tooltip />
               </RePieChart>
+            </ResponsiveContainer>
+          </ChartContainer>
+        </ChartCard>
+        
+        <ChartCard>
+          <ChartTitle>
+            <Eye size={18} /> Vues vs Likes
+          </ChartTitle>
+          <ChartContainer>
+            <ResponsiveContainer width="100%" height="100%">
+              <ReBarChart data={[
+                { name: 'Vidéos', value: stats.engagement.likes },
+                { name: 'Morceaux', value: stats.totalTracks },
+                { name: 'Posts', value: stats.totalOrders }
+              ]}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="name" />
+                <YAxis />
+                <Tooltip />
+                <Bar dataKey="value" fill="#FF6B35" />
+              </ReBarChart>
             </ResponsiveContainer>
           </ChartContainer>
         </ChartCard>

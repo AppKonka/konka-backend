@@ -1,5 +1,5 @@
 // src/modules/fan/pages/Discover.jsx
-import React, { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect, useRef, useCallback } from 'react'
 import styled from 'styled-components'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Header } from '../../shared/components/layout/Header'
@@ -8,6 +8,7 @@ import { Avatar } from '../../shared/components/ui/Avatar'
 import { Button } from '../../shared/components/ui/Button'
 import { useAuth } from '../../shared/context/AuthContext'
 import { supabase } from '../../../config/supabase'
+import { toast } from 'react-hot-toast'
 
 const Container = styled.div`
   min-height: 100vh;
@@ -290,17 +291,32 @@ const Discover = () => {
   const [loading, setLoading] = useState(true)
   const [direction, setDirection] = useState(null)
   const [activeFilter, setActiveFilter] = useState('all')
+  const [userLocation, setUserLocation] = useState(null)
   
   const cardRef = useRef(null)
   const { user } = useAuth()
 
-  useEffect(() => {
-    loadProfiles()
-    loadMatches()
-    loadLikes()
-  }, [activeFilter])
+  // Récupérer la localisation de l'utilisateur
+  const getUserLocation = useCallback(async () => {
+    try {
+      const { data: userData } = await supabase
+        .from('users')
+        .select('location_lat, location_lng')
+        .eq('id', user.id)
+        .single()
+      
+      if (userData && userData.location_lat && userData.location_lng) {
+        setUserLocation({
+          lat: userData.location_lat,
+          lng: userData.location_lng
+        })
+      }
+    } catch (error) {
+      console.error('Error getting user location:', error)
+    }
+  }, [user.id])
 
-  const loadProfiles = async () => {
+  const loadProfiles = useCallback(async () => {
     setLoading(true)
     try {
       // Récupérer les profils à recommander
@@ -315,26 +331,16 @@ const Discover = () => {
           city,
           date_of_birth,
           role,
-          user_interests(genre),
-          tracks!inner(like_count)
+          location_lat,
+          location_lng
         `)
         .neq('id', user.id)
         .eq('role', 'fan')
         .limit(20)
 
       // Filtrer par distance si nécessaire
-      if (activeFilter === 'nearby' && userProfile?.location_lat) {
-        // Récupérer la localisation de l'utilisateur
-        const { data: userData } = await supabase
-          .from('users')
-          .select('location_lat, location_lng')
-          .eq('id', user.id)
-          .single()
-        
-        if (userData) {
-          // Calcul de distance (simplifié)
-          query = query.not('location_lat', 'is', null)
-        }
+      if (activeFilter === 'nearby' && userLocation) {
+        query = query.not('location_lat', 'is', null)
       }
 
       const { data, error } = await query
@@ -349,23 +355,32 @@ const Discover = () => {
             .from('follows')
             .select('following_id')
             .eq('follower_id', user.id)
-            .in('following_id', supabase.from('users').select('id').eq('role', 'artist'))
           
           // Récupérer les artistes suivis par le profil
           const { data: profileArtists } = await supabase
             .from('follows')
             .select('following_id')
             .eq('follower_id', profile.id)
-            .in('following_id', supabase.from('users').select('id').eq('role', 'artist'))
           
           const commonArtists = userArtists?.filter(
             ua => profileArtists?.some(pa => pa.following_id === ua.following_id)
           ) || []
           
+          // Calculer la distance si les deux ont des coordonnées
+          let distanceScore = 0
+          if (userLocation && profile.location_lat && profile.location_lng) {
+            const distance = calculateDistance(
+              userLocation.lat, userLocation.lng,
+              profile.location_lat, profile.location_lng
+            )
+            // Plus la distance est petite, plus le score est élevé
+            distanceScore = Math.max(0, 20 - Math.min(20, distance / 5))
+          }
+          
           return {
             ...profile,
             commonArtists: commonArtists.length,
-            score: commonArtists.length * 35 + Math.random() * 100,
+            score: (commonArtists.length * 35) + distanceScore + Math.random() * 30,
           }
         })
       )
@@ -373,14 +388,17 @@ const Discover = () => {
       // Trier par score
       profilesWithScore.sort((a, b) => b.score - a.score)
       setProfiles(profilesWithScore)
+      
+      console.log('👥 Profils chargés:', profilesWithScore.length)
     } catch (error) {
       console.error('Error loading profiles:', error)
+      toast.error('Erreur lors du chargement des profils')
     } finally {
       setLoading(false)
     }
-  }
+  }, [user.id, activeFilter, userLocation])
 
-  const loadMatches = async () => {
+  const loadMatches = useCallback(async () => {
     try {
       const { data, error } = await supabase
         .from('matches')
@@ -389,12 +407,11 @@ const Discover = () => {
           user1_id,
           user2_id,
           user1:users!matches_user1_id_fkey(id, username, avatar_url),
-          user2:users!matches_user2_id_fkey(id, username, avatar_url),
-          messages(content, created_at)
+          user2:users!matches_user2_id_fkey(id, username, avatar_url)
         `)
         .or(`user1_id.eq.${user.id},user2_id.eq.${user.id}`)
         .eq('status', 'matched')
-        .order('created_at', { ascending: false })
+        .order('matched_at', { ascending: false })
       
       if (error) throw error
       
@@ -409,21 +426,30 @@ const Discover = () => {
             .order('created_at', { ascending: false })
             .limit(1)
           
+          const { data: unreadCount } = await supabase
+            .from('messages')
+            .select('id', { count: 'exact' })
+            .eq('match_id', match.id)
+            .eq('is_read', false)
+            .neq('sender_id', user.id)
+          
           return {
             ...match,
             otherUser,
             lastMessage: lastMessage?.[0],
+            unreadCount: unreadCount?.count || 0
           }
         })
       )
       
       setMatches(matchesWithMessages)
+      console.log('💑 Matchs chargés:', matchesWithMessages.length)
     } catch (error) {
       console.error('Error loading matches:', error)
     }
-  }
+  }, [user.id])
 
-  const loadLikes = async () => {
+  const loadLikes = useCallback(async () => {
     try {
       const { data, error } = await supabase
         .from('matches')
@@ -437,6 +463,7 @@ const Discover = () => {
         .or(`user1_id.eq.${user.id},user2_id.eq.${user.id}`)
         .eq('status', 'pending')
         .neq('user1_id', user.id)
+        .order('created_at', { ascending: false })
       
       if (error) throw error
       
@@ -446,10 +473,21 @@ const Discover = () => {
       }))
       
       setLikes(likesWithUsers)
+      console.log('❤️ Likes reçus:', likesWithUsers.length)
     } catch (error) {
       console.error('Error loading likes:', error)
     }
-  }
+  }, [user.id])
+
+  useEffect(() => {
+    getUserLocation()
+  }, [getUserLocation])
+
+  useEffect(() => {
+    loadProfiles()
+    loadMatches()
+    loadLikes()
+  }, [loadProfiles, loadMatches, loadLikes, activeFilter])
 
   const handleSwipe = async (action) => {
     if (currentIndex >= profiles.length) return
@@ -464,6 +502,7 @@ const Discover = () => {
           user1_id: user.id,
           user2_id: currentProfile.id,
           status: 'pending',
+          created_at: new Date().toISOString()
         })
         .select()
       
@@ -496,13 +535,21 @@ const Discover = () => {
               type: 'new_match',
               title: 'Nouveau match !',
               content: `Vous avez matché avec @${currentProfile.username}`,
+              created_at: new Date().toISOString()
             })
+          
+          toast.success(`🎉 C'est un match avec @${currentProfile.username} !`)
+          console.log('💑 Match réciproque créé!')
+        } else {
+          toast.success(`❤️ Like envoyé à @${currentProfile.username}`)
         }
       }
+    } else if (action === 'super') {
+      toast.success(`👑 Super like envoyé à @${currentProfile.username}`)
     }
     
     // Animation de sortie
-    setDirection(action === 'like' ? 'right' : 'left')
+    setDirection(action === 'like' || action === 'super' ? 'right' : 'left')
     
     // Passer au profil suivant
     setTimeout(() => {
@@ -518,10 +565,12 @@ const Discover = () => {
         .update({ status: 'matched', matched_at: new Date().toISOString() })
         .eq('id', like.id)
       
+      toast.success(`🎉 Vous avez matché avec @${like.user?.username} !`)
       await loadMatches()
       await loadLikes()
     } catch (error) {
       console.error('Error accepting like:', error)
+      toast.error('Erreur lors de l\'acceptation')
     }
   }
 
@@ -539,8 +588,9 @@ const Discover = () => {
   }
 
   const handleMatchClick = (match) => {
-    // Naviguer vers la conversation
     console.log('Open chat with', match.otherUser.username)
+    // Naviguer vers la conversation
+    // navigate(`/fan/messages?match=${match.id}`)
   }
 
   const currentProfile = profiles[currentIndex]
@@ -692,12 +742,18 @@ const Discover = () => {
                       src={match.otherUser?.avatar_url}
                       name={match.otherUser?.username}
                       size={52}
+                      status={match.otherUser?.status}
                     />
                     <MatchInfo>
                       <MatchName>@{match.otherUser?.username}</MatchName>
                       {match.lastMessage && (
                         <MatchMessage>
-                          {match.lastMessage.content?.substring(0, 40)}...
+                          {match.lastMessage.content?.substring(0, 40)}
+                          {match.unreadCount > 0 && (
+                            <span style={{ marginLeft: 8, color: '#FF6B35', fontWeight: 'bold' }}>
+                              • {match.unreadCount} non lu(s)
+                            </span>
+                          )}
                         </MatchMessage>
                       )}
                     </MatchInfo>
@@ -765,6 +821,17 @@ const calculateAge = (dateOfBirth) => {
     age--
   }
   return age
+}
+
+const calculateDistance = (lat1, lng1, lat2, lng2) => {
+  const R = 6371 // Rayon de la Terre en km
+  const dLat = (lat2 - lat1) * Math.PI / 180
+  const dLng = (lng2 - lng1) * Math.PI / 180
+  const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+            Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+            Math.sin(dLng / 2) * Math.sin(dLng / 2)
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+  return R * c
 }
 
 export default Discover

@@ -1,5 +1,5 @@
 // src/modules/fan/pages/OrderTracking.jsx
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import styled from 'styled-components'
 import { motion } from 'framer-motion'
@@ -9,6 +9,7 @@ import { Button } from '../../shared/components/ui/Button'
 import { MusicPlayer } from '../../shared/components/layout/MusicPlayer'
 import { useAuth } from '../../shared/context/AuthContext'
 import { supabase } from '../../../config/supabase'
+import { toast } from 'react-hot-toast'
 
 const Container = styled.div`
   min-height: 100vh;
@@ -215,6 +216,14 @@ const SupportButton = styled(motion.button)`
   cursor: pointer;
 `
 
+const LoadingSpinner = styled.div`
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 40px;
+  color: ${props => props.theme.textSecondary};
+`
+
 const OrderTracking = () => {
   const { orderId } = useParams()
   const navigate = useNavigate()
@@ -224,14 +233,10 @@ const OrderTracking = () => {
   const [tracking, setTracking] = useState(null)
   const [loading, setLoading] = useState(true)
 
-  useEffect(() => {
-    loadOrder()
-  }, [orderId])
-
-  const loadOrder = async () => {
+  const loadOrder = useCallback(async () => {
     setLoading(true)
     try {
-      // Charger la commande
+      // Vérifier que la commande appartient à l'utilisateur
       const { data: orderData, error: orderError } = await supabase
         .from('orders')
         .select(`
@@ -242,6 +247,7 @@ const OrderTracking = () => {
           )
         `)
         .eq('id', orderId)
+        .eq('buyer_id', user.id)
         .single()
       
       if (orderError) throw orderError
@@ -256,12 +262,26 @@ const OrderTracking = () => {
       
       setTracking(trackingData || [])
       
+      console.log('📦 Commande chargée:', {
+        orderId,
+        status: orderData?.status,
+        total: orderData?.total_amount
+      })
     } catch (error) {
       console.error('Error loading order:', error)
+      toast.error('Erreur lors du chargement de la commande')
+      // Rediriger si la commande n'appartient pas à l'utilisateur
+      if (error.message?.includes('No rows found')) {
+        navigate('/fan/shopping/orders')
+      }
     } finally {
       setLoading(false)
     }
-  }
+  }, [orderId, user?.id, navigate])
+
+  useEffect(() => {
+    loadOrder()
+  }, [loadOrder])
 
   const getStatusText = (status) => {
     switch (status) {
@@ -312,11 +332,20 @@ const OrderTracking = () => {
     })
   }
 
+  const handleContactSupport = () => {
+    // Utiliser user.id pour pré-remplir le formulaire de contact
+    navigate(`/fan/contact?order=${order.id}&userId=${user.id}`)
+    console.log('📞 Support contacté pour la commande:', order.id, 'par l\'utilisateur:', user.id)
+  }
+
   if (loading) {
     return (
       <Container>
         <Header title="Suivi commande" showBack />
-        <div style={{ textAlign: 'center', padding: 40 }}>Chargement...</div>
+        <LoadingSpinner>
+          <div>Chargement de votre commande...</div>
+        </LoadingSpinner>
+        <MusicPlayer />
         <BottomNavigation />
       </Container>
     )
@@ -326,13 +355,20 @@ const OrderTracking = () => {
     return (
       <Container>
         <Header title="Suivi commande" showBack />
-        <div style={{ textAlign: 'center', padding: 40 }}>Commande non trouvée</div>
+        <div style={{ textAlign: 'center', padding: 40 }}>
+          <div style={{ fontSize: 48, marginBottom: 16 }}>📦</div>
+          <div>Commande non trouvée</div>
+          <Button onClick={() => navigate('/fan/shopping/orders')} style={{ marginTop: 20 }}>
+            Voir mes commandes
+          </Button>
+        </div>
         <BottomNavigation />
       </Container>
     )
   }
 
   const steps = ['pending', 'confirmed', 'shipped', 'delivered']
+  const currentStepIndex = steps.indexOf(order.status)
 
   return (
     <Container>
@@ -353,16 +389,24 @@ const OrderTracking = () => {
         <TrackingHeader>Suivi de livraison</TrackingHeader>
         
         <TrackingMap>
-          {/* Intégration Google Maps pour le suivi en temps réel */}
           <div style={{ textAlign: 'center', color: '#888' }}>
-            🗺️ Carte de suivi<br />
-            {order.tracking_number && `N° de suivi: ${order.tracking_number}`}
+            <div style={{ fontSize: 48, marginBottom: 8 }}>🗺️</div>
+            <div>Carte de suivi</div>
+            {order.tracking_number && (
+              <div style={{ fontSize: 12, marginTop: 8 }}>
+                N° de suivi: {order.tracking_number}
+              </div>
+            )}
+            <div style={{ fontSize: 11, marginTop: 4, color: '#aaa' }}>
+              {currentStepIndex === 3 ? 'Livré' : 'En cours de livraison'}
+            </div>
           </div>
         </TrackingMap>
         
         <TrackingSteps>
           {steps.map((step) => {
             const active = getStepStatus(step, order.status)
+            const stepTracking = tracking?.find(t => t.status === step)
             return (
               <Step key={step} active={active}>
                 <StepIcon active={active}>
@@ -372,14 +416,14 @@ const OrderTracking = () => {
                   <StepTitle active={active}>
                     {getStepTitle(step)}
                   </StepTitle>
-                  {active && tracking && tracking.find(t => t.status === step) && (
+                  {active && stepTracking && (
                     <>
                       <StepDate>
-                        {formatDate(tracking.find(t => t.status === step)?.timestamp)}
+                        {formatDate(stepTracking.timestamp)}
                       </StepDate>
-                      {tracking.find(t => t.status === step)?.location && (
+                      {stepTracking.location && (
                         <StepLocation>
-                          📍 {tracking.find(t => t.status === step)?.location}
+                          📍 {stepTracking.location}
                         </StepLocation>
                       )}
                     </>
@@ -392,7 +436,9 @@ const OrderTracking = () => {
       </TrackingSection>
       
       <ProductsList>
-        <h4 style={{ marginBottom: 12 }}>Produits commandés</h4>
+        <h4 style={{ marginBottom: 12, color: order.status === 'delivered' ? '#00C851' : '#888' }}>
+          Produits commandés
+        </h4>
         {order.items?.map((item, idx) => (
           <ProductItem key={idx}>
             <ProductImage src={item.product?.images?.[0] || '/images/default-product.jpg'} />
@@ -406,10 +452,10 @@ const OrderTracking = () => {
       </ProductsList>
       
       <SupportButton
-        onClick={() => navigate(`/fan/contact?order=${order.id}`)}
+        onClick={handleContactSupport}
         whileTap={{ scale: 0.98 }}
       >
-          Besoin d'aide ? Contacter le support
+        💬 Besoin d'aide ? Contacter le support
       </SupportButton>
       
       <MusicPlayer />

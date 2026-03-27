@@ -1,4 +1,5 @@
 # backend/app/routers/payments.py
+import uuid
 from fastapi import APIRouter, HTTPException, status, Depends, Request, Query, BackgroundTasks
 from typing import Optional
 from pydantic import BaseModel
@@ -6,6 +7,7 @@ from app.core.security import get_current_user
 from app.services.payment.stripe_service import stripe_service
 from app.services.payment.mobile_money_service import mobile_money_service
 from app.database import db
+from app.config import settings
 
 router = APIRouter(prefix="/payments", tags=["Payments"])
 

@@ -1,5 +1,5 @@
 // src/modules/fan/pages/Home.jsx
-import React, { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect, useRef, useCallback } from 'react'
 import styled from 'styled-components'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useInView } from 'react-intersection-observer'
@@ -10,6 +10,7 @@ import { VideoCard } from '../components/VideoFeed/VideoCard'
 import { useAuth } from '../../shared/context/AuthContext'
 import { usePlayer } from '../../shared/context/PlayerContext'
 import { supabase } from '../../../config/supabase'
+import { toast } from 'react-hot-toast'
 
 const Container = styled.div`
   height: 100vh;
@@ -153,16 +154,15 @@ const Home = () => {
   const [loading, setLoading] = useState(true)
   const [currentIndex, setCurrentIndex] = useState(0)
   const [showInterestSlider, setShowInterestSlider] = useState(false)
+  const [isVideoInView, setIsVideoInView] = useState(true)
   
   const containerRef = useRef(null)
   const { user } = useAuth()
   const { playTrack } = usePlayer()
 
-  useEffect(() => {
-    loadVideos()
-  }, [activeTab, activeMode, interestWeights])
-
-  const loadVideos = async () => {
+  const loadVideos = useCallback(async () => {
+    if (!user) return
+    
     setLoading(true)
     try {
       let query = supabase
@@ -205,24 +205,40 @@ const Home = () => {
       
       if (error) throw error
       setVideos(data || [])
+      
+      console.log('📹 Vidéos chargées:', data?.length)
     } catch (error) {
       console.error('Error loading videos:', error)
+      toast.error('Erreur lors du chargement des vidéos')
     } finally {
       setLoading(false)
     }
-  }
+  }, [user, activeTab])
 
-  const handleScroll = () => {
+  useEffect(() => {
+    loadVideos()
+  }, [loadVideos, activeMode, interestWeights])
+
+  const handleScroll = useCallback(() => {
     if (!containerRef.current) return
     
     const scrollPosition = containerRef.current.scrollTop
     const videoHeight = window.innerHeight
     const newIndex = Math.round(scrollPosition / videoHeight)
     
+    // Détecter si la vidéo actuelle est visible
+    const currentVideoElement = containerRef.current.children[currentIndex]
+    if (currentVideoElement) {
+      const rect = currentVideoElement.getBoundingClientRect()
+      const isVisible = rect.top >= -100 && rect.top <= window.innerHeight + 100
+      setIsVideoInView(isVisible)
+    }
+    
     if (newIndex !== currentIndex && newIndex >= 0 && newIndex < videos.length) {
       setCurrentIndex(newIndex)
+      console.log('📺 Vidéo changée:', newIndex, 'Visible:', isVideoInView)
     }
-  }
+  }, [currentIndex, videos.length, isVideoInView])
 
   const handleVideoEnd = () => {
     // Passer à la vidéo suivante
@@ -231,6 +247,7 @@ const Home = () => {
         top: (currentIndex + 1) * window.innerHeight,
         behavior: 'smooth',
       })
+      console.log('⏭️ Passage à la vidéo suivante:', currentIndex + 1)
     }
   }
 
@@ -247,9 +264,37 @@ const Home = () => {
       setVideos(prev => prev.map(v => 
         v.id === videoId ? { ...v, like_count: v.like_count + 1 } : v
       ))
+      
+      console.log('❤️ Like ajouté à la vidéo:', videoId)
     } catch (error) {
       console.error('Error liking video:', error)
+      toast.error('Erreur lors du like')
     }
+  }
+
+  // Utiliser useInView pour détecter la visibilité des vidéos
+  const { ref: inViewRef, inView } = useInView({
+    threshold: 0.5,
+    triggerOnce: false,
+  })
+
+  // Détecter quand la vidéo entre dans le viewport pour des analytics
+  useEffect(() => {
+    if (videos[currentIndex] && inView) {
+      console.log('👁️ Vidéo visible dans le viewport:', videos[currentIndex].id)
+    }
+  }, [currentIndex, inView, videos])
+
+  if (!user) {
+    return (
+      <Container>
+        <Header title="Accueil" showProfile />
+        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>
+          Connectez-vous pour voir le feed
+        </div>
+        <BottomNavigation />
+      </Container>
+    )
   }
 
   return (
@@ -323,17 +368,28 @@ const Home = () => {
           <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>
             Chargement...
           </div>
+        ) : videos.length === 0 ? (
+          <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', flexDirection: 'column' }}>
+            <div style={{ fontSize: 48, marginBottom: 16 }}>📹</div>
+            <div>Aucune vidéo pour le moment</div>
+            <div style={{ fontSize: 13, marginTop: 8, color: '#888' }}>
+              {activeTab === 'all' && "Reviens plus tard pour voir du contenu"}
+              {activeTab === 'matches' && "Suis des artistes pour voir leurs vidéos"}
+              {activeTab === 'artists' && "Abonne-toi à des artistes pour voir leur contenu"}
+              {activeTab === 'challenges' && "Participe aux challenges pour apparaître ici"}
+            </div>
+          </div>
         ) : (
           videos.map((video, index) => (
-            <FeedSection key={video.id}>
+            <FeedSection key={video.id} ref={index === currentIndex ? inViewRef : null}>
               <VideoCard
                 video={video}
                 isActive={index === currentIndex}
                 onLike={() => handleLike(video.id, video.like_count)}
-                onShare={() => {}}
-                onComment={() => {}}
+                onShare={() => console.log('🔁 Partager la vidéo:', video.id)}
+                onComment={() => console.log('💬 Commenter la vidéo:', video.id)}
                 onMusicClick={() => video.music && playTrack(video.music)}
-                onUserClick={() => {}}
+                onUserClick={() => console.log('👤 Profil utilisateur:', video.user_id)}
                 onEnded={handleVideoEnd}
               />
             </FeedSection>

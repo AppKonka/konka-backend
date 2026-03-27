@@ -1,5 +1,5 @@
 // src/modules/fan/pages/Chill.jsx
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import styled from 'styled-components'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Header } from '../../shared/components/layout/Header'
@@ -9,6 +9,8 @@ import { Button } from '../../shared/components/ui/Button'
 import { useAuth } from '../../shared/context/AuthContext'
 import { supabase } from '../../../config/supabase'
 import { ChillMap } from '../components/Chill/ChillMap'
+import { toast } from 'react-hot-toast'
+
 const Container = styled.div`
   min-height: 100vh;
   background: ${props => props.theme.background};
@@ -332,6 +334,14 @@ const ModalFooter = styled.div`
   gap: 12px;
 `
 
+const LoadingSpinner = styled.div`
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 40px;
+  color: ${props => props.theme.textSecondary};
+`
+
 const Chill = () => {
   const [activeTab, setActiveTab] = useState('events')
   const [events, setEvents] = useState([])
@@ -353,12 +363,7 @@ const Chill = () => {
   
   const { user } = useAuth()
 
-  useEffect(() => {
-    loadEvents()
-    loadAvailableUsers()
-  }, [])
-
-  const loadEvents = async () => {
+  const loadEvents = useCallback(async () => {
     setLoading(true)
     try {
       const { data, error } = await supabase
@@ -375,14 +380,17 @@ const Chill = () => {
       
       if (error) throw error
       setEvents(data || [])
+      
+      console.log('🌴 Événements chargés:', data?.length)
     } catch (error) {
       console.error('Error loading events:', error)
+      toast.error('Erreur lors du chargement des sorties')
     } finally {
       setLoading(false)
     }
-  }
+  }, [])
 
-  const loadAvailableUsers = async () => {
+  const loadAvailableUsers = useCallback(async () => {
     try {
       const { data, error } = await supabase
         .from('users')
@@ -393,10 +401,17 @@ const Chill = () => {
       
       if (error) throw error
       setAvailableUsers(data || [])
+      
+      console.log('👥 Utilisateurs disponibles:', data?.length)
     } catch (error) {
       console.error('Error loading available users:', error)
     }
-  }
+  }, [user.id])
+
+  useEffect(() => {
+    loadEvents()
+    loadAvailableUsers()
+  }, [loadEvents, loadAvailableUsers])
 
   const handleCreateEvent = async () => {
     try {
@@ -416,36 +431,72 @@ const Chill = () => {
           dress_code: formData.dressCode,
           description: formData.description,
         })
+        .select()
       
       if (error) throw error
       
+      if (data && data[0]) {
+        console.log('✅ Sortie créée avec succès:', {
+          eventId: data[0].id,
+          name: data[0].name,
+          date: data[0].event_date
+        })
+        toast.success('Sortie créée avec succès !')
+      }
+      
       setShowCreateModal(false)
+      setFormData({
+        name: '',
+        location: '',
+        date: '',
+        time: '',
+        ageMin: '',
+        ageMax: '',
+        participants: '',
+        fee: '',
+        dressCode: '',
+        description: '',
+      })
       loadEvents()
     } catch (error) {
       console.error('Error creating event:', error)
+      toast.error('Erreur lors de la création de la sortie')
     }
   }
 
   const handleJoinEvent = async (eventId) => {
     try {
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from('chill_participants')
         .insert({
           event_id: eventId,
           user_id: user.id,
           status: 'pending',
         })
+        .select()
       
       if (error) throw error
+      
+      if (data && data[0]) {
+        console.log('📝 Demande de participation envoyée:', {
+          eventId,
+          participantId: data[0].id
+        })
+        toast.success('Demande de participation envoyée !')
+      }
       
       loadEvents()
     } catch (error) {
       console.error('Error joining event:', error)
+      toast.error('Erreur lors de la participation')
     }
   }
 
   const handleContactUser = (userId) => {
-    console.log('Contact user:', userId)
+    console.log('📞 Contacter l\'utilisateur:', userId)
+    toast.info(`Ouverture du chat avec l'utilisateur`)
+    // Naviguer vers le chat
+    // navigate(`/fan/messages?user=${userId}`)
   }
 
   const formatDate = (date) => {
@@ -465,11 +516,26 @@ const Chill = () => {
   const getPlacesLeft = (event) => {
     if (!event.participant_limit) return 'Illimité'
     const count = getParticipantCount(event)
-    return `${event.participant_limit - count} places`
+    const left = event.participant_limit - count
+    return `${left} place${left > 1 ? 's' : ''}`
+  }
+
+  if (loading && events.length === 0) {
+    return (
+      <Container>
+        <Header title="Chill" showBack />
+        <LoadingSpinner>
+          <div>Chargement des sorties...</div>
+        </LoadingSpinner>
+        <BottomNavigation />
+      </Container>
+    )
   }
 
   return (
     <Container>
+      <Header title="Chill" showBack />
+      
       <HeaderSection>
         <Title>CHILL</Title>
         <ActionButtons>
@@ -498,13 +564,13 @@ const Chill = () => {
           active={activeTab === 'events'}
           onClick={() => setActiveTab('events')}
         >
-          Sorties
+          Sorties ({events.length})
         </Tab>
         <Tab
           active={activeTab === 'available'}
           onClick={() => setActiveTab('available')}
         >
-          Disponibles
+          Disponibles ({availableUsers.length})
         </Tab>
       </TabsContainer>
       
@@ -517,11 +583,13 @@ const Chill = () => {
             exit={{ opacity: 0 }}
           >
             <EventsList>
-              {loading ? (
-                <div style={{ textAlign: 'center', padding: 40 }}>Chargement...</div>
-              ) : events.length === 0 ? (
+              {events.length === 0 ? (
                 <div style={{ textAlign: 'center', padding: 40, color: '#888' }}>
-                  Aucune sortie pour le moment
+                  <div style={{ fontSize: 48, marginBottom: 16 }}>🌴</div>
+                  <div>Aucune sortie pour le moment</div>
+                  <div style={{ fontSize: 13, marginTop: 8 }}>
+                    Créez une sortie pour commencer
+                  </div>
                 </div>
               ) : (
                 events.map(event => (
@@ -569,7 +637,7 @@ const Chill = () => {
                       
                       <EventParticipants>
                         <ParticipantAvatars>
-                          {event.participants?.filter(p => p.status === 'approved').slice(0, 3).map((p, i) => (
+                          {event.participants?.filter(p => p.status === 'approved').slice(0, 3).map((p) => (
                             <Avatar
                               key={p.user_id}
                               src={p.user?.avatar_url}
@@ -608,32 +676,44 @@ const Chill = () => {
             exit={{ opacity: 0 }}
           >
             <AvailableUsers>
-              {availableUsers.map(user => (
-                <UserCard
-                  key={user.id}
-                  whileTap={{ scale: 0.98 }}
-                >
-                  <Avatar
-                    src={user.avatar_url}
-                    name={user.username}
-                    size={52}
-                    status={user.status}
-                  />
-                  <UserInfo>
-                    <UserName>@{user.username}</UserName>
-                    <UserDetails>
-                      {user.city && `📍 ${user.city} • `}
-                      {user.status === 'online' ? 'En ligne' : 'Hors ligne'}
-                    </UserDetails>
-                  </UserInfo>
-                  <ContactButton
-                    onClick={() => handleContactUser(user.id)}
-                    whileTap={{ scale: 0.95 }}
+              {availableUsers.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: 40, color: '#888' }}>
+                  <div style={{ fontSize: 48, marginBottom: 16 }}>👥</div>
+                  <div>Aucun utilisateur disponible</div>
+                </div>
+              ) : (
+                availableUsers.map(user => (
+                  <UserCard
+                    key={user.id}
+                    whileTap={{ scale: 0.98 }}
                   >
-                    Contacter
-                  </ContactButton>
-                </UserCard>
-              ))}
+                    <Avatar
+                      src={user.avatar_url}
+                      name={user.username}
+                      size={52}
+                      status={user.status}
+                    />
+                    <UserInfo>
+                      <UserName>@{user.username}</UserName>
+                      <UserDetails>
+                        {user.city && `📍 ${user.city} • `}
+                        {user.status === 'online' ? 'En ligne' : 'Hors ligne'}
+                        {user.bio && (
+                          <span style={{ fontSize: 11, color: '#888', display: 'block', marginTop: 2 }}>
+                            {user.bio.substring(0, 50)}...
+                          </span>
+                        )}
+                      </UserDetails>
+                    </UserInfo>
+                    <ContactButton
+                      onClick={() => handleContactUser(user.id)}
+                      whileTap={{ scale: 0.95 }}
+                    >
+                      Contacter
+                    </ContactButton>
+                  </UserCard>
+                ))
+              )}
             </AvailableUsers>
           </motion.div>
         )}

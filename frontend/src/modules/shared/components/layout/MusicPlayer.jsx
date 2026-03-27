@@ -1,8 +1,9 @@
 // src/modules/shared/components/layout/MusicPlayer.jsx
-import React, { useState, useRef } from 'react'
+import React, { useState, useRef, useEffect } from 'react'
 import styled from 'styled-components'
 import { motion, AnimatePresence } from 'framer-motion'
 import ReactPlayer from 'react-player'
+import { usePlayer } from '../../context/PlayerContext'
 
 const PlayerContainer = styled(motion.div)`
   position: fixed;
@@ -89,18 +90,58 @@ const ProgressBar = styled.input`
 
 export const MusicPlayer = () => {
   const [isExpanded, setIsExpanded] = useState(false)
-  const [currentTrack, setCurrentTrack] = useState({
-    title: 'Sample Track',
-    artist: 'Sample Artist',
-    thumbnail: 'https://via.placeholder.com/48',
-    url: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3',
-  })
   const [playing, setPlaying] = useState(false)
   const [progress, setProgress] = useState(0)
   const [duration, setDuration] = useState(0)
+  const [currentTrack, setCurrentTrack] = useState({
+    title: 'Aucun morceau',
+    artist: 'KONKA',
+    thumbnail: 'https://via.placeholder.com/48',
+    url: '',
+  })
+  
   const playerRef = useRef(null)
+  const { 
+    currentTrack: globalTrack, 
+    isPlaying: globalIsPlaying,
+    pauseTrack, 
+    resumeTrack,
+    nextTrack,
+    previousTrack,
+    seekTo
+  } = usePlayer()
 
-  const handlePlayPause = () => setPlaying(!playing)
+  // Synchroniser avec le contexte global
+  useEffect(() => {
+    if (globalTrack) {
+      setCurrentTrack({
+        title: globalTrack.title || 'Sans titre',
+        artist: globalTrack.artist?.username || globalTrack.artist || 'Artiste inconnu',
+        thumbnail: globalTrack.cover_url || 'https://via.placeholder.com/48',
+        url: globalTrack.audio_url || globalTrack.url || '',
+      })
+    }
+  }, [globalTrack])
+
+  useEffect(() => {
+    setPlaying(globalIsPlaying)
+  }, [globalIsPlaying])
+
+  const handlePlayPause = () => {
+    if (playing) {
+      pauseTrack()
+    } else {
+      resumeTrack()
+    }
+  }
+
+  const handleNext = () => {
+    nextTrack()
+  }
+
+  const handlePrevious = () => {
+    previousTrack()
+  }
 
   const handleProgress = (state) => {
     setProgress(state.played)
@@ -113,7 +154,10 @@ export const MusicPlayer = () => {
   const handleSeek = (e) => {
     const newProgress = parseFloat(e.target.value)
     setProgress(newProgress)
-    playerRef.current.seekTo(newProgress)
+    if (playerRef.current) {
+      playerRef.current.seekTo(newProgress)
+    }
+    seekTo(newProgress * duration)
   }
 
   const formatTime = (seconds) => {
@@ -121,6 +165,11 @@ export const MusicPlayer = () => {
     const mins = Math.floor(seconds / 60)
     const secs = Math.floor(seconds % 60)
     return `${mins}:${secs.toString().padStart(2, '0')}`
+  }
+
+  // Ne pas afficher le lecteur si aucun morceau n'est chargé
+  if (!currentTrack.url) {
+    return null
   }
 
   return (
@@ -168,15 +217,15 @@ export const MusicPlayer = () => {
         >
           <button 
             onClick={() => setIsExpanded(false)}
-            style={{ position: 'absolute', top: 20, right: 20, background: 'none', border: 'none', fontSize: 24, color: 'white' }}
+            style={{ position: 'absolute', top: 20, right: 20, background: 'none', border: 'none', fontSize: 24, color: 'white', cursor: 'pointer' }}
           >
             ✕
           </button>
           
           <LargeThumbnail src={currentTrack.thumbnail} alt={currentTrack.title} />
           <TrackInfo style={{ textAlign: 'center', marginTop: 20 }}>
-            <h4 style={{ fontSize: 20 }}>{currentTrack.title}</h4>
-            <p style={{ fontSize: 16 }}>{currentTrack.artist}</p>
+            <h4 style={{ fontSize: 20, color: 'white' }}>{currentTrack.title}</h4>
+            <p style={{ fontSize: 16, color: 'rgba(255,255,255,0.7)' }}>{currentTrack.artist}</p>
           </TrackInfo>
           
           <ProgressBar
@@ -186,19 +235,20 @@ export const MusicPlayer = () => {
             step={0.001}
             value={progress}
             onChange={handleSeek}
+            style={{ margin: '20px 0' }}
           />
           
-          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '0 20px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '0 20px', color: 'white' }}>
             <span>{formatTime(progress * duration)}</span>
             <span>{formatTime(duration)}</span>
           </div>
           
           <Controls>
-            <button>⏮️</button>
-            <button onClick={handlePlayPause} style={{ fontSize: 48 }}>
+            <button onClick={handlePrevious} style={{ color: 'white', cursor: 'pointer' }}>⏮️</button>
+            <button onClick={handlePlayPause} style={{ fontSize: 48, color: '#FF6B35', cursor: 'pointer' }}>
               {playing ? '⏸️' : '▶️'}
             </button>
-            <button>⏭️</button>
+            <button onClick={handleNext} style={{ color: 'white', cursor: 'pointer' }}>⏭️</button>
           </Controls>
           
           <ReactPlayer

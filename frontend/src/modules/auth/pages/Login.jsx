@@ -7,6 +7,7 @@ import { Button } from '../../shared/components/ui/Button'
 import { Input } from '../../shared/components/ui/Input'
 import { useTheme } from '../../shared/context/ThemeContext'
 import { useAuth } from '../../shared/context/AuthContext'
+import { toast } from 'react-hot-toast'
 
 const Container = styled.div`
   min-height: 100vh;
@@ -16,16 +17,26 @@ const Container = styled.div`
   flex-direction: column;
 `
 
-const BackButton = styled.button`
+const BackButton = styled(motion.button)`
   background: none;
   border: none;
   font-size: 24px;
   cursor: pointer;
   margin-bottom: 40px;
   color: ${props => props.theme.text};
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 20px;
+  
+  &:hover {
+    background: ${props => props.theme.border}40;
+  }
 `
 
-const Logo = styled.div`
+const Logo = styled(motion.div)`
   text-align: center;
   margin-bottom: 48px;
   
@@ -39,28 +50,29 @@ const Logo = styled.div`
   }
 `
 
-const Title = styled.h2`
+const Title = styled(motion.h2)`
   font-size: 28px;
   font-weight: 700;
   margin-bottom: 8px;
   text-align: center;
+  color: ${props => props.theme.text};
 `
 
-const Subtitle = styled.p`
+const Subtitle = styled(motion.p)`
   font-size: 14px;
   color: ${props => props.theme.textSecondary};
   text-align: center;
   margin-bottom: 32px;
 `
 
-const Form = styled.form`
+const Form = styled(motion.form)`
   display: flex;
   flex-direction: column;
   gap: 16px;
   margin-bottom: 24px;
 `
 
-const ForgotPassword = styled.div`
+const ForgotPassword = styled(motion.div)`
   text-align: right;
   margin-top: 8px;
   
@@ -68,10 +80,32 @@ const ForgotPassword = styled.div`
     color: ${props => props.theme.primary};
     text-decoration: none;
     font-size: 14px;
+    
+    &:hover {
+      text-decoration: underline;
+    }
   }
 `
 
-const RegisterLink = styled.p`
+const RememberMe = styled(motion.label)`
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  
+  input {
+    width: 16px;
+    height: 16px;
+    cursor: pointer;
+  }
+  
+  span {
+    font-size: 14px;
+    color: ${props => props.theme.textSecondary};
+  }
+`
+
+const RegisterLink = styled(motion.p)`
   text-align: center;
   margin-top: 24px;
   font-size: 14px;
@@ -81,10 +115,14 @@ const RegisterLink = styled.p`
     color: ${props => props.theme.primary};
     text-decoration: none;
     font-weight: 600;
+    
+    &:hover {
+      text-decoration: underline;
+    }
   }
 `
 
-const Divider = styled.div`
+const Divider = styled(motion.div)`
   display: flex;
   align-items: center;
   gap: 16px;
@@ -104,7 +142,7 @@ const Divider = styled.div`
   }
 `
 
-const SocialButtons = styled.div`
+const SocialButtons = styled(motion.div)`
   display: flex;
   gap: 16px;
   
@@ -120,6 +158,7 @@ const SocialButtons = styled.div`
     
     &:hover {
       transform: translateY(-2px);
+      background: ${props => props.theme.border}40;
     }
   }
 `
@@ -160,7 +199,10 @@ const Login = () => {
     const result = await login(formData.email, formData.password)
     
     if (result.success) {
+      toast.success('Connexion réussie !')
       // La redirection se fait automatiquement via le contexte
+    } else {
+      toast.error(result.error || 'Erreur de connexion')
     }
     
     setLoading(false)
@@ -178,24 +220,51 @@ const Login = () => {
   }
 
   const handleSocialLogin = (provider) => {
-    // Implémenter la connexion sociale
     console.log(`Login with ${provider}`)
+    toast.info(`Connexion avec ${provider} (bientôt disponible)`)
   }
 
   return (
     <Container theme={theme}>
-      <BackButton onClick={() => navigate('/')} theme={theme}>
+      <BackButton
+        onClick={() => navigate('/')}
+        whileTap={{ scale: 0.95 }}
+        whileHover={{ scale: 1.05 }}
+        theme={theme}
+      >
         ←
       </BackButton>
       
-      <Logo>
+      <Logo
+        initial={{ opacity: 0, y: -20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.5 }}
+      >
         <h1>KONKA</h1>
       </Logo>
       
-      <Title>Bon retour</Title>
-      <Subtitle>Connecte-toi pour retrouver ta communauté</Subtitle>
+      <Title
+        initial={{ opacity: 0, y: -10 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.5, delay: 0.1 }}
+      >
+        Bon retour
+      </Title>
       
-      <Form onSubmit={handleSubmit}>
+      <Subtitle
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ duration: 0.5, delay: 0.2 }}
+      >
+        Connecte-toi pour retrouver ta communauté
+      </Subtitle>
+      
+      <Form
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.5, delay: 0.3 }}
+        onSubmit={handleSubmit}
+      >
         <Input
           type="email"
           name="email"
@@ -216,44 +285,71 @@ const Login = () => {
           icon="🔒"
         />
         
-        <ForgotPassword theme={theme}>
+        <ForgotPassword
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ duration: 0.5, delay: 0.4 }}
+          theme={theme}
+        >
           <Link to="/forgot-password">Mot de passe oublié ?</Link>
         </ForgotPassword>
         
-        <label style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+        <RememberMe
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ duration: 0.5, delay: 0.45 }}
+        >
           <input
             type="checkbox"
             name="rememberMe"
             checked={formData.rememberMe}
             onChange={handleChange}
           />
-          <span style={{ fontSize: '14px', color: theme.colors.textSecondary }}>
-            Se souvenir de moi
-          </span>
-        </label>
+          <span>Se souvenir de moi</span>
+        </RememberMe>
         
-        <Button type="submit" fullWidth loading={loading}>
+        <Button
+          type="submit"
+          fullWidth
+          loading={loading}
+          whileTap={{ scale: 0.98 }}
+        >
           Se connecter
         </Button>
       </Form>
       
-      <Divider theme={theme}>
+      <Divider
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ duration: 0.5, delay: 0.5 }}
+        theme={theme}
+      >
         <span>ou</span>
       </Divider>
       
-      <SocialButtons theme={theme}>
-        <button onClick={() => handleSocialLogin('google')}>
+      <SocialButtons
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ duration: 0.5, delay: 0.55 }}
+        theme={theme}
+      >
+        <button onClick={() => handleSocialLogin('apple')} whileTap={{ scale: 0.95 }}>
           🍎
         </button>
-        <button onClick={() => handleSocialLogin('google')}>
+        <button onClick={() => handleSocialLogin('google')} whileTap={{ scale: 0.95 }}>
           G
         </button>
-        <button onClick={() => handleSocialLogin('facebook')}>
+        <button onClick={() => handleSocialLogin('facebook')} whileTap={{ scale: 0.95 }}>
           f
         </button>
       </SocialButtons>
       
-      <RegisterLink theme={theme}>
+      <RegisterLink
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ duration: 0.5, delay: 0.6 }}
+        theme={theme}
+      >
         Pas encore de compte ? <Link to="/register">S'inscrire</Link>
       </RegisterLink>
     </Container>

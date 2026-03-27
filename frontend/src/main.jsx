@@ -7,7 +7,7 @@ import { Toaster } from 'react-hot-toast'
 import App from './App'
 import { AuthProvider } from './modules/shared/context/AuthContext'
 import { ThemeProvider } from './modules/shared/context/ThemeContext'
-import { PlayerProvider } from './modules/shared/context/PlayerContext'
+import { PlayerProvider } from './modules/shared/context/PlayerProvider'
 import './styles/globals.css'
 import './styles/variables.css'
 

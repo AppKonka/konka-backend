@@ -1,7 +1,8 @@
 // frontend/src/modules/shared/components/ui/VoiceSearch.jsx
-import React, { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect, useRef, useCallback } from 'react'
 import styled from 'styled-components'
 import { motion, AnimatePresence } from 'framer-motion'
+import { toast } from 'react-hot-toast'
 
 const Container = styled(motion.div)`
   position: fixed;
@@ -78,6 +79,27 @@ const SuggestionChip = styled(motion.button)`
   }
 `
 
+const ConfidenceIndicator = styled.div`
+  position: absolute;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 8px;
+  padding: 8px 16px;
+  background: rgba(0,0,0,0.5);
+  border-radius: 20px;
+  font-size: 12px;
+  color: white;
+`
+
+const ConfidenceDot = styled(motion.div)`
+  width: 8px;
+  height: 8px;
+  border-radius: 4px;
+  background: ${props => props.active ? props.theme.primary : 'rgba(255,255,255,0.3)'};
+`
+
 const CloseButton = styled(motion.button)`
   position: absolute;
   top: 40px;
@@ -94,73 +116,19 @@ const VoiceSearch = ({ onResult, onClose }) => {
   const [transcript, setTranscript] = useState('')
   const [isProcessing, setIsProcessing] = useState(false)
   const [suggestions, setSuggestions] = useState([])
+  const [confidence, setConfidence] = useState(0)
   const recognitionRef = useRef(null)
 
-  useEffect(() => {
-    // Initialiser la reconnaissance vocale
-    if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
-      const SpeechRecognition = window.webkitSpeechRecognition || window.SpeechRecognition
-      recognitionRef.current = new SpeechRecognition()
-      recognitionRef.current.lang = 'fr-FR'
-      recognitionRef.current.interimResults = true
-      recognitionRef.current.continuous = false
-      recognitionRef.current.maxAlternatives = 3
-      
-      recognitionRef.current.onstart = () => {
-        setIsListening(true)
-        setTranscript('')
-      }
-      
-      recognitionRef.current.onresult = (event) => {
-        const current = event.resultIndex
-        const transcriptText = event.results[current][0].transcript
-        const confidence = event.results[current][0].confidence
-        setTranscript(transcriptText)
-        
-        // Générer des suggestions basées sur la transcription
-        generateSuggestions(transcriptText)
-        
-        if (event.results[current].isFinal) {
-          processVoiceInput(transcriptText)
-        }
-      }
-      
-      recognitionRef.current.onerror = (event) => {
-        console.error('Speech recognition error:', event.error)
-        setIsListening(false)
-        setTranscript('Erreur de reconnaissance')
-        setTimeout(() => {
-          setTranscript('')
-        }, 1500)
-      }
-      
-      recognitionRef.current.onend = () => {
-        setIsListening(false)
-      }
-    }
-  }, [])
-
-  const startListening = () => {
-    if (recognitionRef.current) {
-      recognitionRef.current.start()
-    } else {
-      setTranscript('Reconnaissance vocale non supportée')
-      setTimeout(() => onClose(), 1500)
-    }
-  }
-
-  const stopListening = () => {
-    if (recognitionRef.current) {
-      recognitionRef.current.stop()
-    }
-  }
-
-  const processVoiceInput = async (text) => {
+  const processVoiceInput = useCallback(async (text, confidenceLevel) => {
     setIsProcessing(true)
     
     try {
       // Analyser le texte avec IA
       const analysis = await analyzeVoiceInput(text)
+      
+      // Utiliser confidence pour l'affichage
+      setConfidence(confidenceLevel)
+      console.log('🎤 Confiance de reconnaissance:', confidenceLevel, 'Texte:', text)
       
       onResult?.(analysis, text)
       setTranscript(`Recherche: "${text}"`)
@@ -173,7 +141,30 @@ const VoiceSearch = ({ onResult, onClose }) => {
     } finally {
       setIsProcessing(false)
     }
-  }
+  }, [onResult, onClose])
+
+  const generateSuggestions = useCallback((text) => {
+    const lowerText = text.toLowerCase()
+    const suggestionsList = []
+    
+    if (lowerText.includes('musique') || lowerText.includes('morceau')) {
+      suggestionsList.push('Musique populaire', 'Nouveautés', 'Top 50')
+    }
+    
+    if (lowerText.includes('artiste')) {
+      suggestionsList.push('Artistes tendance', 'Nouveaux artistes', 'Artistes locaux')
+    }
+    
+    if (lowerText.includes('vêtement') || lowerText.includes('chaussure')) {
+      suggestionsList.push('Promotions', 'Nouveautés', 'Tendances')
+    }
+    
+    if (suggestionsList.length === 0) {
+      suggestionsList.push('Musique', 'Artistes', 'Shopping', 'Aide')
+    }
+    
+    setSuggestions(suggestionsList.slice(0, 5))
+  }, [])
 
   const analyzeVoiceInput = async (text) => {
     const lowerText = text.toLowerCase()
@@ -253,31 +244,76 @@ const VoiceSearch = ({ onResult, onClose }) => {
     }
   }
 
-  const generateSuggestions = (text) => {
-    const lowerText = text.toLowerCase()
-    const suggestionsList = []
-    
-    if (lowerText.includes('musique') || lowerText.includes('morceau')) {
-      suggestionsList.push('Musique populaire', 'Nouveautés', 'Top 50')
+  useEffect(() => {
+    // Initialiser la reconnaissance vocale
+    if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
+      const SpeechRecognition = window.webkitSpeechRecognition || window.SpeechRecognition
+      recognitionRef.current = new SpeechRecognition()
+      recognitionRef.current.lang = 'fr-FR'
+      recognitionRef.current.interimResults = true
+      recognitionRef.current.continuous = false
+      recognitionRef.current.maxAlternatives = 3
+      
+      recognitionRef.current.onstart = () => {
+        setIsListening(true)
+        setTranscript('')
+        setConfidence(0)
+      }
+      
+      recognitionRef.current.onresult = (event) => {
+        const current = event.resultIndex
+        const transcriptText = event.results[current][0].transcript
+        const confidenceLevel = event.results[current][0].confidence
+        setTranscript(transcriptText)
+        setConfidence(confidenceLevel)
+        
+        // Générer des suggestions basées sur la transcription
+        generateSuggestions(transcriptText)
+        
+        if (event.results[current].isFinal) {
+          processVoiceInput(transcriptText, confidenceLevel)
+        }
+      }
+      
+      recognitionRef.current.onerror = (event) => {
+        console.error('Speech recognition error:', event.error)
+        setIsListening(false)
+        setTranscript('Erreur de reconnaissance')
+        toast.error('Erreur de reconnaissance vocale')
+        setTimeout(() => {
+          setTranscript('')
+          onClose()
+        }, 1500)
+      }
+      
+      recognitionRef.current.onend = () => {
+        setIsListening(false)
+      }
+    } else {
+      setTranscript('Reconnaissance vocale non supportée')
+      toast.error('Votre navigateur ne supporte pas la reconnaissance vocale')
+      setTimeout(() => onClose(), 1500)
     }
-    
-    if (lowerText.includes('artiste')) {
-      suggestionsList.push('Artistes tendance', 'Nouveaux artistes', 'Artistes locaux')
+  }, [processVoiceInput, generateSuggestions, onClose])
+
+  const startListening = () => {
+    if (recognitionRef.current) {
+      recognitionRef.current.start()
+    } else {
+      setTranscript('Reconnaissance vocale non supportée')
+      setTimeout(() => onClose(), 1500)
     }
-    
-    if (lowerText.includes('vêtement') || lowerText.includes('chaussure')) {
-      suggestionsList.push('Promotions', 'Nouveautés', 'Tendances')
-    }
-    
-    if (suggestionsList.length === 0) {
-      suggestionsList.push('Musique', 'Artistes', 'Shopping', 'Aide')
-    }
-    
-    setSuggestions(suggestionsList.slice(0, 5))
   }
 
   const handleSuggestionClick = (suggestion) => {
-    processVoiceInput(suggestion)
+    processVoiceInput(suggestion, 1.0)
+  }
+
+  // Calculer la couleur en fonction de la confiance
+  const getConfidenceColor = () => {
+    if (confidence > 0.8) return '#00C851'
+    if (confidence > 0.5) return '#FFB444'
+    return '#FF4444'
   }
 
   return (
@@ -342,6 +378,25 @@ const VoiceSearch = ({ onResult, onClose }) => {
             </SuggestionChip>
           ))}
         </Suggestions>
+      )}
+      
+      {confidence > 0 && (
+        <ConfidenceIndicator>
+          <span>Confiance:</span>
+          {[...Array(5)].map((_, i) => (
+            <ConfidenceDot
+              key={i}
+              active={i < Math.floor(confidence * 5)}
+              animate={{
+                scale: i < Math.floor(confidence * 5) ? [1, 1.2, 1] : 1
+              }}
+              transition={{ duration: 0.5, repeat: Infinity, delay: i * 0.1 }}
+            />
+          ))}
+          <span style={{ color: getConfidenceColor(), marginLeft: 4 }}>
+            {Math.floor(confidence * 100)}%
+          </span>
+        </ConfidenceIndicator>
       )}
     </Container>
   )

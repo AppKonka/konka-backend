@@ -4,7 +4,7 @@ from typing import List, Dict, Any, Optional
 from datetime import datetime, timedelta
 import logging
 from app.database import db
-from app.services.ai.ai_service import ai_service
+from app.services.ai_service import ai_service
 
 logger = logging.getLogger(__name__)
 
@@ -78,15 +78,20 @@ class MusicRecommendationService:
             thirty_days_ago = (datetime.now() - timedelta(days=30)).isoformat()
             
             # En production, utiliser une table d'historique
-            # Ici simulation
-            history = await db.table('listening_history').select('*')\
-                .eq('user_id', user_id)\
-                .gte('listened_at', thirty_days_ago)\
-                .order('listened_at', desc=True)\
-                .limit(100)\
-                .execute()
+            # Ici simulation avec les tracks likées
+            liked_tracks = await self._get_liked_tracks(user_id)
             
-            return history.data or []
+            if liked_tracks:
+                # Simuler un historique basé sur les likes
+                history = []
+                for track_id in liked_tracks[:10]:
+                    history.append({
+                        'track_id': track_id,
+                        'listened_at': (datetime.now() - timedelta(days=np.random.randint(1, 30))).isoformat()
+                    })
+                return history
+            
+            return []
             
         except Exception as e:
             logger.error(f"Error getting listening history: {e}")
@@ -99,7 +104,7 @@ class MusicRecommendationService:
                 .eq('user_id', user_id)\
                 .execute()
             
-            return [l['track_id'] for l in likes.data]
+            return [l['track_id'] for l in likes.data] if likes.data else []
             
         except Exception as e:
             logger.error(f"Error getting liked tracks: {e}")
@@ -112,7 +117,7 @@ class MusicRecommendationService:
                 .eq('user_id', user_id)\
                 .execute()
             
-            return [g['genre'] for g in genres.data]
+            return [g['genre'] for g in genres.data] if genres.data else []
             
         except Exception as e:
             logger.error(f"Error getting favorite genres: {e}")
@@ -125,7 +130,7 @@ class MusicRecommendationService:
                 .eq('follower_id', user_id)\
                 .execute()
             
-            return [f['following_id'] for f in follows.data]
+            return [f['following_id'] for f in follows.data] if follows.data else []
             
         except Exception as e:
             logger.error(f"Error getting followed artists: {e}")
@@ -146,7 +151,6 @@ class MusicRecommendationService:
             listened_ids = [h['track_id'] for h in history]
             
             # Trouver des morceaux similaires
-            # Utiliser l'IA pour trouver des similarités
             recommendations = []
             
             for track_id in listened_ids[:10]:  # Limiter pour performance
@@ -158,7 +162,7 @@ class MusicRecommendationService:
             recommendations = [r for r in recommendations if r['id'] not in exclude_ids]
             
             # Trier par score
-            recommendations.sort(key=lambda x: x.get('score', 0), reverse=True)
+            recommendations.sort(key=lambda x: x.get('play_count', 0), reverse=True)
             
             return recommendations[:limit]
             
@@ -183,7 +187,7 @@ class MusicRecommendationService:
                 .limit(limit * 2)\
                 .execute()
             
-            return tracks.data[:limit]
+            return tracks.data[:limit] if tracks.data else []
             
         except Exception as e:
             logger.error(f"Error getting genre based recommendations: {e}")
@@ -207,14 +211,17 @@ class MusicRecommendationService:
             
             # Récupérer les morceaux de ces artistes
             artist_ids = list(set(similar_artists))
-            tracks = await db.table('tracks').select('*, artist:users(id, username)')\
-                .in_('artist_id', artist_ids)\
-                .eq('is_public', True)\
-                .order('play_count', desc=True)\
-                .limit(limit)\
-                .execute()
+            if artist_ids:
+                tracks = await db.table('tracks').select('*, artist:users(id, username)')\
+                    .in_('artist_id', artist_ids)\
+                    .eq('is_public', True)\
+                    .order('play_count', desc=True)\
+                    .limit(limit)\
+                    .execute()
+                
+                return tracks.data if tracks.data else []
             
-            return tracks.data
+            return []
             
         except Exception as e:
             logger.error(f"Error getting artist based recommendations: {e}")
@@ -232,7 +239,7 @@ class MusicRecommendationService:
                 .limit(limit)\
                 .execute()
             
-            return tracks.data
+            return tracks.data if tracks.data else []
             
         except Exception as e:
             logger.error(f"Error getting new discoveries: {e}")
@@ -260,7 +267,7 @@ class MusicRecommendationService:
                 .limit(limit)\
                 .execute()
             
-            return similar.data
+            return similar.data if similar.data else []
             
         except Exception as e:
             logger.error(f"Error getting similar tracks: {e}")
@@ -292,6 +299,47 @@ class MusicRecommendationService:
         except Exception as e:
             logger.error(f"Error getting similar artists: {e}")
             return []
+    
+    async def get_user_music_profile(self, user_id: str) -> Dict[str, Any]:
+        """Récupère le profil musical d'un utilisateur"""
+        try:
+            genres = await self._get_favorite_genres(user_id)
+            artists = await self._get_followed_artists(user_id)
+            liked_tracks = await self._get_liked_tracks(user_id)
+            
+            # Calculer l'embedding du profil utilisateur (simplifié)
+            profile_vector = np.zeros(10)  # Vecteur de 10 dimensions
+            
+            # Utiliser numpy pour les calculs (optionnel)
+            if genres:
+                # Simulation d'un embedding basé sur les genres
+                for genre in genres:
+                    genre_hash = hash(genre) % 10
+                    profile_vector[genre_hash] += 1
+            
+            # Normaliser
+            if np.sum(profile_vector) > 0:
+                profile_vector = profile_vector / np.sum(profile_vector)
+            
+            return {
+                "user_id": user_id,
+                "favorite_genres": genres,
+                "followed_artists_count": len(artists),
+                "liked_tracks_count": len(liked_tracks),
+                "profile_vector": profile_vector.tolist(),
+                "recommendation_ready": len(genres) > 0 or len(artists) > 0
+            }
+            
+        except Exception as e:
+            logger.error(f"Error getting user music profile: {e}")
+            return {
+                "user_id": user_id,
+                "favorite_genres": [],
+                "followed_artists_count": 0,
+                "liked_tracks_count": 0,
+                "profile_vector": [],
+                "recommendation_ready": False
+            }
 
 # Instance singleton
 music_recommendation_service = MusicRecommendationService()

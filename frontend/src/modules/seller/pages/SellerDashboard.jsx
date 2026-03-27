@@ -1,5 +1,5 @@
 // src/modules/seller/pages/SellerDashboard.jsx
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import styled from 'styled-components'
 import { motion } from 'framer-motion'
@@ -10,6 +10,7 @@ import { Button } from '../../shared/components/ui/Button'
 import { MusicPlayer } from '../../shared/components/layout/MusicPlayer'
 import { useAuth } from '../../shared/context/AuthContext'
 import { supabase } from '../../../config/supabase'
+import { toast } from 'react-hot-toast'
 
 const Container = styled.div`
   min-height: 100vh;
@@ -255,6 +256,14 @@ const LowStockCount = styled.span`
   font-weight: 500;
 `
 
+const LoadingSpinner = styled.div`
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 40px;
+  color: ${props => props.theme.textSecondary};
+`
+
 const SellerDashboard = () => {
   const navigate = useNavigate()
   const { user, userProfile } = useAuth()
@@ -267,19 +276,18 @@ const SellerDashboard = () => {
   const [recentOrders, setRecentOrders] = useState([])
   const [lowStockProducts, setLowStockProducts] = useState([])
   const [loading, setLoading] = useState(true)
+  const [lastUpdate, setLastUpdate] = useState(null)
 
-  useEffect(() => {
-    loadDashboardData()
-  }, [])
-
-  const loadDashboardData = async () => {
+  const loadDashboardData = useCallback(async () => {
     setLoading(true)
     try {
       // Charger les produits
-      const { data: productsData } = await supabase
+      const { data: productsData, error: productsError } = await supabase
         .from('products')
         .select('*')
         .eq('seller_id', user.id)
+      
+      if (productsError) throw productsError
       
       setStats(prev => ({ ...prev, products: productsData?.length || 0 }))
       
@@ -288,7 +296,7 @@ const SellerDashboard = () => {
       setLowStockProducts(lowStock)
       
       // Charger les commandes
-      const { data: ordersData } = await supabase
+      const { data: ordersData, error: ordersError } = await supabase
         .from('orders')
         .select(`
           *,
@@ -305,6 +313,8 @@ const SellerDashboard = () => {
         .order('created_at', { ascending: false })
         .limit(5)
       
+      if (ordersError) throw ordersError
+      
       setRecentOrders(ordersData || [])
       
       // Calculer les stats
@@ -317,12 +327,26 @@ const SellerDashboard = () => {
         orders: ordersData?.length || 0,
         customers: uniqueCustomers,
       }))
+      
+      setLastUpdate(new Date().toISOString())
+      
+      console.log('📊 Tableau de bord chargé:', {
+        products: productsData?.length,
+        orders: ordersData?.length,
+        revenue: totalRevenue,
+        lowStock: lowStock.length
+      })
     } catch (error) {
       console.error('Error loading dashboard data:', error)
+      toast.error('Erreur lors du chargement des données')
     } finally {
       setLoading(false)
     }
-  }
+  }, [user.id])
+
+  useEffect(() => {
+    loadDashboardData()
+  }, [loadDashboardData])
 
   const formatNumber = (num) => {
     if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M'
@@ -345,7 +369,22 @@ const SellerDashboard = () => {
     return new Date(date).toLocaleDateString('fr-FR', {
       day: 'numeric',
       month: 'short',
+      hour: '2-digit',
+      minute: '2-digit'
     })
+  }
+
+  if (loading) {
+    return (
+      <Container>
+        <Header title="Espace Vendeur" showProfile />
+        <LoadingSpinner>
+          <div>Chargement de votre tableau de bord...</div>
+        </LoadingSpinner>
+        <MusicPlayer />
+        <BottomNavigation />
+      </Container>
+    )
   }
 
   return (
@@ -359,6 +398,11 @@ const SellerDashboard = () => {
         <WelcomeSubtitle>
           Gérez votre boutique et vos ventes
         </WelcomeSubtitle>
+        {lastUpdate && (
+          <p style={{ fontSize: 11, opacity: 0.7, marginTop: 8 }}>
+            Dernière mise à jour: {formatDate(lastUpdate)}
+          </p>
+        )}
       </WelcomeSection>
       
       <StatsGrid>
@@ -376,7 +420,7 @@ const SellerDashboard = () => {
         </StatCard>
         <StatCard whileTap={{ scale: 0.98 }}>
           <StatValue>{stats.customers}</StatValue>
-          <StatLabel>Clients</StatLabel>
+          <StatLabel>Clients uniques</StatLabel>
         </StatCard>
       </StatsGrid>
       
@@ -392,6 +436,12 @@ const SellerDashboard = () => {
           whileTap={{ scale: 0.95 }}
         >
           📦 Voir les commandes
+        </QuickActionButton>
+        <QuickActionButton
+          onClick={() => navigate('/seller/analytics')}
+          whileTap={{ scale: 0.95 }}
+        >
+          📊 Statistiques
         </QuickActionButton>
       </QuickActions>
       
@@ -440,6 +490,10 @@ const SellerDashboard = () => {
                   </ActionButton>
                   {order.status === 'confirmed' && (
                     <ActionButton
+                      onClick={() => {
+                        console.log('Expédier la commande:', order.id)
+                        navigate(`/seller/orders/${order.id}/ship`)
+                      }}
                       whileTap={{ scale: 0.95 }}
                     >
                       Expédier
@@ -457,7 +511,11 @@ const SellerDashboard = () => {
           <SectionTitle>⚠️ Stock faible</SectionTitle>
           <LowStockList>
             {lowStockProducts.map(product => (
-              <LowStockCard key={product.id} whileTap={{ scale: 0.95 }}>
+              <LowStockCard
+                key={product.id}
+                onClick={() => navigate(`/seller/products/${product.id}/edit`)}
+                whileTap={{ scale: 0.95 }}
+              >
                 <LowStockImage src={product.images?.[0] || '/images/default-product.jpg'} />
                 <LowStockName>{product.name}</LowStockName>
                 <LowStockCount>Stock: {product.stock}</LowStockCount>

@@ -1,5 +1,5 @@
 // src/modules/artist/pages/DedicationRequests.jsx
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import styled from 'styled-components'
 import { motion } from 'framer-motion'
 import { Header } from '../../shared/components/layout/Header'
@@ -9,6 +9,7 @@ import { Button } from '../../shared/components/ui/Button'
 import { MusicPlayer } from '../../shared/components/layout/MusicPlayer'
 import { useAuth } from '../../shared/context/AuthContext'
 import { supabase } from '../../../config/supabase'
+import { toast } from 'react-hot-toast'
 
 const Container = styled.div`
   min-height: 100vh;
@@ -214,6 +215,25 @@ const ModalFooter = styled.div`
   gap: 12px;
 `
 
+const LoadingSpinner = styled.div`
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 40px;
+  color: ${props => props.theme.textSecondary};
+`
+
+const EmptyState = styled.div`
+  text-align: center;
+  padding: 60px 20px;
+  color: ${props => props.theme.textSecondary};
+  
+  .icon {
+    font-size: 48px;
+    margin-bottom: 16px;
+  }
+`
+
 const DedicationRequests = () => {
   const [activeTab, setActiveTab] = useState('pending')
   const [requests, setRequests] = useState([])
@@ -226,11 +246,7 @@ const DedicationRequests = () => {
   
   const { user } = useAuth()
 
-  useEffect(() => {
-    loadRequests()
-  }, [activeTab])
-
-  const loadRequests = async () => {
+  const loadRequests = useCallback(async () => {
     setLoading(true)
     try {
       let query = supabase
@@ -253,12 +269,25 @@ const DedicationRequests = () => {
       
       if (error) throw error
       setRequests(data || [])
+      
+      console.log('📋 Demandes chargées:', {
+        activeTab,
+        count: data?.length,
+        pending: data?.filter(r => r.status === 'pending').length,
+        accepted: data?.filter(r => r.status === 'accepted').length,
+        completed: data?.filter(r => r.status === 'completed').length
+      })
     } catch (error) {
       console.error('Error loading requests:', error)
+      toast.error('Erreur lors du chargement des demandes')
     } finally {
       setLoading(false)
     }
-  }
+  }, [activeTab, user.id])
+
+  useEffect(() => {
+    loadRequests()
+  }, [loadRequests])
 
   const handleAccept = async (request) => {
     try {
@@ -269,9 +298,12 @@ const DedicationRequests = () => {
       
       if (error) throw error
       
+      toast.success(`Dédicace acceptée pour @${request.fan?.username}`)
+      console.log('✅ Dédicace acceptée:', request.id)
       loadRequests()
     } catch (error) {
       console.error('Error accepting request:', error)
+      toast.error('Erreur lors de l\'acceptation')
     }
   }
 
@@ -284,15 +316,19 @@ const DedicationRequests = () => {
       
       if (error) throw error
       
+      toast.info(`Dédicace refusée pour @${request.fan?.username}`)
+      console.log('❌ Dédicace refusée:', request.id)
       loadRequests()
     } catch (error) {
       console.error('Error rejecting request:', error)
+      toast.error('Erreur lors du refus')
     }
   }
 
   const handleDeliver = (request) => {
     setSelectedRequest(request)
     setShowDeliveryModal(true)
+    console.log('📦 Préparation de la livraison pour:', request.id)
   }
 
   const uploadVideo = async (file) => {
@@ -304,6 +340,29 @@ const DedicationRequests = () => {
       .upload(filePath, file)
     
     if (error) throw error
+    
+    // Enregistrer les informations du fichier uploadé dans les logs
+    console.log('✅ Vidéo uploadée avec succès:', {
+      fileName: data.path,
+      fileId: data.id,
+      bucketId: data.bucket_id,
+      uploadTime: new Date().toISOString()
+    })
+    
+    // Optionnel: Sauvegarder l'ID du fichier dans la base de données pour traçabilité
+    await supabase
+      .from('dedications')
+      .update({ 
+        storage_file_id: data.id,
+        storage_file_path: data.path,
+        storage_file_metadata: {
+          name: file.name,
+          size: file.size,
+          type: file.type,
+          uploaded_at: new Date().toISOString()
+        }
+      })
+      .eq('id', selectedRequest.id)
     
     const { data: { publicUrl } } = supabase.storage
       .from('media')
@@ -331,15 +390,25 @@ const DedicationRequests = () => {
       if (error) throw error
       
       // Créer une notification pour le fan
-      await supabase
+      const { data: notificationData, error: notifError } = await supabase
         .from('notifications')
         .insert({
           user_id: selectedRequest.fan_id,
           type: 'dedication_completed',
           title: 'Votre dédicace est prête !',
           content: `Votre dédicace de @${user?.username} est disponible`,
-          data: { dedication_id: selectedRequest.id },
+          data: { 
+            dedication_id: selectedRequest.id,
+            video_url: videoUrl,
+            delivered_at: new Date().toISOString()
+          },
         })
+        .select()
+      
+      if (notifError) throw notifError
+      
+      console.log('✅ Notification envoyée:', notificationData)
+      toast.success('Dédicace livrée avec succès !')
       
       setShowDeliveryModal(false)
       setVideoFile(null)
@@ -347,6 +416,7 @@ const DedicationRequests = () => {
       loadRequests()
     } catch (error) {
       console.error('Error delivering dedication:', error)
+      toast.error('Erreur lors de la livraison')
     } finally {
       setUploading(false)
     }
@@ -358,6 +428,14 @@ const DedicationRequests = () => {
       setVideoFile(file)
       const url = URL.createObjectURL(file)
       setVideoPreview(url)
+      
+      // Log de la sélection du fichier
+      console.log('📹 Fichier vidéo sélectionné:', {
+        name: file.name,
+        size: `${(file.size / 1024 / 1024).toFixed(2)} MB`,
+        type: file.type,
+        lastModified: new Date(file.lastModified).toISOString()
+      })
     }
   }
 
@@ -380,6 +458,31 @@ const DedicationRequests = () => {
     }
   }
 
+  // Calculer les statistiques
+  const stats = {
+    pending: requests.filter(r => r.status === 'pending').length,
+    accepted: requests.filter(r => r.status === 'accepted').length,
+    completed: requests.filter(r => r.status === 'completed').length,
+    rejected: requests.filter(r => r.status === 'rejected').length,
+    total: requests.length,
+    totalRevenue: requests
+      .filter(r => r.status === 'completed')
+      .reduce((sum, r) => sum + (r.price || 0), 0)
+  }
+
+  if (loading) {
+    return (
+      <Container>
+        <Header title="Dédicaces" showProfile showBack />
+        <LoadingSpinner>
+          <div>Chargement des demandes...</div>
+        </LoadingSpinner>
+        <MusicPlayer />
+        <BottomNavigation />
+      </Container>
+    )
+  }
+
   return (
     <Container>
       <Header title="Dédicaces" showProfile showBack />
@@ -387,6 +490,29 @@ const DedicationRequests = () => {
       <HeaderSection>
         <Title>Demandes de dédicace</Title>
         <Subtitle>Réponds aux demandes de tes fans</Subtitle>
+        <div style={{ display: 'flex', gap: 16, marginTop: 16 }}>
+          <div style={{ background: '#FFB44420', padding: '8px 12px', borderRadius: 12 }}>
+            <div style={{ fontSize: 20, fontWeight: 'bold', color: '#FFB444' }}>{stats.pending}</div>
+            <div style={{ fontSize: 12 }}>En attente</div>
+          </div>
+          <div style={{ background: '#00C85120', padding: '8px 12px', borderRadius: 12 }}>
+            <div style={{ fontSize: 20, fontWeight: 'bold', color: '#00C851' }}>{stats.accepted}</div>
+            <div style={{ fontSize: 12 }}>Acceptées</div>
+          </div>
+          <div style={{ background: '#33B5E520', padding: '8px 12px', borderRadius: 12 }}>
+            <div style={{ fontSize: 20, fontWeight: 'bold', color: '#33B5E5' }}>{stats.completed}</div>
+            <div style={{ fontSize: 12 }}>Livrées</div>
+          </div>
+          <div style={{ background: '#FF444420', padding: '8px 12px', borderRadius: 12 }}>
+            <div style={{ fontSize: 20, fontWeight: 'bold', color: '#FF4444' }}>{stats.rejected}</div>
+            <div style={{ fontSize: 12 }}>Refusées</div>
+          </div>
+        </div>
+        {stats.totalRevenue > 0 && (
+          <div style={{ marginTop: 12, fontSize: 14, color: '#00C851' }}>
+            💰 Revenus totaux : {stats.totalRevenue}€
+          </div>
+        )}
       </HeaderSection>
       
       <TabsContainer>
@@ -394,29 +520,33 @@ const DedicationRequests = () => {
           active={activeTab === 'pending'}
           onClick={() => setActiveTab('pending')}
         >
-          En attente ({requests.filter(r => r.status === 'pending').length})
+          En attente ({stats.pending})
         </Tab>
         <Tab
           active={activeTab === 'accepted'}
           onClick={() => setActiveTab('accepted')}
         >
-          Acceptées ({requests.filter(r => r.status === 'accepted').length})
+          Acceptées ({stats.accepted})
         </Tab>
         <Tab
           active={activeTab === 'completed'}
           onClick={() => setActiveTab('completed')}
         >
-          Livrées ({requests.filter(r => r.status === 'completed').length})
+          Livrées ({stats.completed})
         </Tab>
       </TabsContainer>
       
       <RequestsList>
-        {loading ? (
-          <div style={{ textAlign: 'center', padding: 40 }}>Chargement...</div>
-        ) : requests.length === 0 ? (
-          <div style={{ textAlign: 'center', padding: 40, color: '#888' }}>
-            Aucune demande de dédicace
-          </div>
+        {requests.length === 0 ? (
+          <EmptyState>
+            <div className="icon">🎬</div>
+            <div>Aucune demande de dédicace</div>
+            <div style={{ fontSize: 13, marginTop: 8 }}>
+              {activeTab === 'pending' && "Les demandes apparaîtront ici"}
+              {activeTab === 'accepted' && "Aucune demande acceptée pour le moment"}
+              {activeTab === 'completed' && "Aucune dédicace livrée pour le moment"}
+            </div>
+          </EmptyState>
         ) : (
           requests.map(request => (
             <RequestCard key={request.id}>
@@ -475,10 +605,16 @@ const DedicationRequests = () => {
               {request.status === 'completed' && request.video_url && (
                 <RequestActions>
                   <ActionButton
-                    onClick={() => window.open(request.video_url)}
+                    onClick={() => window.open(request.video_url, '_blank')}
                     whileTap={{ scale: 0.95 }}
                   >
                     Voir la vidéo
+                  </ActionButton>
+                  <ActionButton
+                    onClick={() => window.open(`/fan/profile/${request.fan_id}`, '_blank')}
+                    whileTap={{ scale: 0.95 }}
+                  >
+                    Voir le profil
                   </ActionButton>
                 </RequestActions>
               )}

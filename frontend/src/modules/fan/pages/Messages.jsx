@@ -1,5 +1,5 @@
 // src/modules/fan/pages/Messages.jsx
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import styled from 'styled-components'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Header } from '../../shared/components/layout/Header'
@@ -10,6 +10,7 @@ import { SparkStory } from '../components/Sparks/SparkStory'
 import { SparkCreation } from '../components/Sparks/SparkCreation'
 import { useAuth } from '../../shared/context/AuthContext'
 import { supabase } from '../../../config/supabase'
+import { toast } from 'react-hot-toast'
 
 const Container = styled.div`
   min-height: 100vh;
@@ -179,30 +180,7 @@ const Messages = () => {
   
   const { user, userProfile } = useAuth()
 
-  useEffect(() => {
-    loadConversations()
-    loadStories()
-    
-    // Écouter les nouveaux messages en temps réel
-    const subscription = supabase
-      .channel('messages')
-      .on('postgres_changes', {
-        event: 'INSERT',
-        schema: 'public',
-        table: 'messages',
-        filter: `match_id=in.(${conversations.map(c => c.match_id).join(',')})`,
-      }, (payload) => {
-        // Mettre à jour la conversation
-        updateConversation(payload.new)
-      })
-      .subscribe()
-    
-    return () => {
-      subscription.unsubscribe()
-    }
-  }, [activeTab])
-
-  const loadConversations = async () => {
+  const loadConversations = useCallback(async () => {
     setLoading(true)
     try {
       // Récupérer les matchs de l'utilisateur
@@ -241,6 +219,11 @@ const Messages = () => {
             .eq('is_read', false)
             .neq('sender_id', user.id)
           
+          // Utiliser unreadError pour logger en cas d'erreur
+          if (unreadError) {
+            console.error('Error getting unread count:', unreadError)
+          }
+          
           return {
             match_id: match.id,
             user: otherUser,
@@ -256,17 +239,26 @@ const Messages = () => {
         filtered = filtered.filter(c => c.user.role === 'artist')
       } else if (activeTab === 'sellers') {
         filtered = filtered.filter(c => c.user.role === 'seller')
+      } else if (activeTab === 'chill') {
+        filtered = filtered.filter(c => c.user.role === 'fan')
       }
       
       setConversations(filtered)
+      
+      console.log('💬 Conversations chargées:', {
+        total: filtered.length,
+        activeTab,
+        timestamp: new Date().toISOString()
+      })
     } catch (error) {
       console.error('Error loading conversations:', error)
+      toast.error('Erreur lors du chargement des conversations')
     } finally {
       setLoading(false)
     }
-  }
+  }, [user.id, activeTab])
 
-  const loadStories = async () => {
+  const loadStories = useCallback(async () => {
     try {
       const { data, error } = await supabase
         .from('sparks')
@@ -280,12 +272,14 @@ const Messages = () => {
       
       if (error) throw error
       setStories(data || [])
+      
+      console.log('✨ Stories chargées:', data?.length)
     } catch (error) {
       console.error('Error loading stories:', error)
     }
-  }
+  }, [])
 
-  const updateConversation = (newMessage) => {
+  const updateConversation = useCallback((newMessage) => {
     setConversations(prev => {
       const index = prev.findIndex(c => c.match_id === newMessage.match_id)
       if (index !== -1) {
@@ -299,7 +293,29 @@ const Messages = () => {
       }
       return prev
     })
-  }
+  }, [])
+
+  useEffect(() => {
+    loadConversations()
+    loadStories()
+    
+    // Écouter les nouveaux messages en temps réel
+    const subscription = supabase
+      .channel('messages')
+      .on('postgres_changes', {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'messages',
+        filter: `match_id=in.(${conversations.map(c => c.match_id).join(',')})`,
+      }, (payload) => {
+        updateConversation(payload.new)
+      })
+      .subscribe()
+    
+    return () => {
+      subscription.unsubscribe()
+    }
+  }, [activeTab, loadConversations, loadStories, updateConversation, conversations])
 
   const formatTime = (date) => {
     const now = new Date()
@@ -383,7 +399,14 @@ const Messages = () => {
           <div style={{ textAlign: 'center', padding: 40 }}>Chargement...</div>
         ) : conversations.length === 0 ? (
           <div style={{ textAlign: 'center', padding: 40, color: '#888' }}>
-            Aucune conversation pour l'instant
+            <div style={{ fontSize: 48, marginBottom: 16 }}>💬</div>
+            <div>Aucune conversation pour l'instant</div>
+            <div style={{ fontSize: 13, marginTop: 8 }}>
+              {activeTab === 'matches' && "Match avec d'autres utilisateurs pour commencer à discuter"}
+              {activeTab === 'artists' && "Suis des artistes pour recevoir leurs messages"}
+              {activeTab === 'sellers' && "Suis des vendeurs pour recevoir leurs offres"}
+              {activeTab === 'chill' && "Rejoins des sorties pour discuter avec les participants"}
+            </div>
           </div>
         ) : (
           conversations.map(conv => (

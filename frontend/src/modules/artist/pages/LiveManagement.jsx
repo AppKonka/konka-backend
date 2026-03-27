@@ -1,5 +1,5 @@
 // src/modules/artist/pages/LiveManagement.jsx
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import styled from 'styled-components'
 import { motion, AnimatePresence } from 'framer-motion'
 import ReactPlayer from 'react-player'
@@ -363,6 +363,14 @@ const StreamInput = styled.div`
   }
 `
 
+const LoadingSpinner = styled.div`
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 40px;
+  color: ${props => props.theme.textSecondary};
+`
+
 const LiveManagement = () => {
   const [activeTab, setActiveTab] = useState('upcoming')
   const [upcomingLives, setUpcomingLives] = useState([])
@@ -387,15 +395,11 @@ const LiveManagement = () => {
   
   const { user } = useAuth()
 
-  useEffect(() => {
-    loadLives()
-  }, [])
-
-  const loadLives = async () => {
+  const loadLives = useCallback(async () => {
     setLoading(true)
     try {
       // Lives à venir
-      const { data: upcomingData } = await supabase
+      const { data: upcomingData, error: upcomingError } = await supabase
         .from('lives')
         .select('*')
         .eq('host_id', user.id)
@@ -403,42 +407,68 @@ const LiveManagement = () => {
         .gte('scheduled_at', new Date().toISOString())
         .order('scheduled_at', { ascending: true })
       
+      if (upcomingError) throw upcomingError
+      
       setUpcomingLives(upcomingData || [])
       
       // Replays
-      const { data: replayData } = await supabase
+      const { data: replayData, error: replayError } = await supabase
         .from('lives')
         .select('*')
         .eq('host_id', user.id)
         .eq('status', 'ended')
         .order('ended_at', { ascending: false })
       
+      if (replayError) throw replayError
+      
       setReplays(replayData || [])
+      
+      console.log('✅ Lives chargés:', {
+        upcoming: upcomingData?.length || 0,
+        replays: replayData?.length || 0,
+        timestamp: new Date().toISOString()
+      })
     } catch (error) {
       console.error('Error loading lives:', error)
     } finally {
       setLoading(false)
     }
-  }
+  }, [user.id])
+
+  useEffect(() => {
+    loadLives()
+  }, [loadLives])
 
   const handleCreateLive = async () => {
     try {
       const scheduledAt = new Date(`${formData.scheduled_date}T${formData.scheduled_time}`)
       
       let thumbnailUrl = null
+      let thumbnailData = null
+      
       if (formData.thumbnail) {
         const fileName = `${Date.now()}_${formData.thumbnail.name}`
         const filePath = `lives/${user.id}/${fileName}`
         
-        const { data } = await supabase.storage
+        const { data, error } = await supabase.storage
           .from('media')
           .upload(filePath, formData.thumbnail)
+        
+        if (error) throw error
+        
+        thumbnailData = data
         
         const { data: { publicUrl } } = supabase.storage
           .from('media')
           .getPublicUrl(filePath)
         
         thumbnailUrl = publicUrl
+        
+        console.log('✅ Thumbnail uploadée:', {
+          filePath: data.path,
+          fileId: data.id,
+          publicUrl: thumbnailUrl
+        })
       }
       
       const { error } = await supabase
@@ -452,10 +482,17 @@ const LiveManagement = () => {
           price: formData.type === 'paid' ? parseFloat(formData.price) : 0,
           visibility: formData.visibility,
           thumbnail_url: thumbnailUrl,
+          thumbnail_file_id: thumbnailData?.id,
+          thumbnail_file_path: thumbnailData?.path,
           status: 'scheduled',
         })
       
       if (error) throw error
+      
+      console.log('✅ Live créé avec succès:', {
+        title: formData.title,
+        scheduledAt: scheduledAt.toISOString()
+      })
       
       setShowModal(false)
       setFormData({
@@ -488,8 +525,18 @@ const LiveManagement = () => {
       
       if (error) throw error
       
+      console.log('🔴 Live démarré:', {
+        liveId: live.id,
+        title: live.title,
+        streamKey: `live_${Date.now()}`,
+        startedAt: new Date().toISOString()
+      })
+      
       setActiveLive({ ...live, status: 'live' })
       setIsStreaming(true)
+      
+      // Initialiser le compteur de viewers
+      setViewers(0)
       
       // Écouter les commentaires
       const subscription = supabase
@@ -501,6 +548,7 @@ const LiveManagement = () => {
           filter: `live_id=eq.${live.id}`,
         }, (payload) => {
           setComments(prev => [...prev, payload.new])
+          console.log('💬 Nouveau commentaire:', payload.new)
         })
         .subscribe()
       
@@ -521,6 +569,12 @@ const LiveManagement = () => {
         .eq('id', activeLive.id)
       
       if (error) throw error
+      
+      console.log('⏹️ Live terminé:', {
+        liveId: activeLive.id,
+        title: activeLive.title,
+        endedAt: new Date().toISOString()
+      })
       
       setIsStreaming(false)
       setActiveLive(null)
@@ -543,6 +597,13 @@ const LiveManagement = () => {
         })
       
       if (error) throw error
+      
+      console.log('💬 Commentaire envoyé:', {
+        liveId: activeLive.id,
+        content: commentText,
+        userId: user.id
+      })
+      
       setCommentText('')
     } catch (error) {
       console.error('Error sending comment:', error)
@@ -557,6 +618,12 @@ const LiveManagement = () => {
         .eq('id', liveId)
       
       if (error) throw error
+      
+      console.log('❌ Live annulé:', {
+        liveId: liveId,
+        cancelledAt: new Date().toISOString()
+      })
+      
       loadLives()
     } catch (error) {
       console.error('Error canceling live:', error)
@@ -572,15 +639,40 @@ const LiveManagement = () => {
     })
   }
 
+  // Calculer les statistiques
+  const stats = {
+    totalUpcoming: upcomingLives.length,
+    totalReplays: replays.length,
+    totalViewers: replays.reduce((sum, r) => sum + (r.viewer_count || 0), 0)
+  }
+
+  if (loading) {
+    return (
+      <Container>
+        <Header title="Mes Lives" showProfile showBack />
+        <LoadingSpinner>
+          <div>Chargement des lives...</div>
+        </LoadingSpinner>
+        <MusicPlayer />
+        <BottomNavigation />
+      </Container>
+    )
+  }
+
   return (
     <Container>
       <Header title="Mes Lives" showProfile showBack />
       
       <HeaderSection>
         <Title>Mes Lives</Title>
-        <CreateButton onClick={() => setShowModal(true)} whileTap={{ scale: 0.95 }}>
-          + Programmer
-        </CreateButton>
+        <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+          <div style={{ fontSize: 14, color: '#888' }}>
+            📊 {stats.totalUpcoming} à venir • {stats.totalReplays} replays • {stats.totalViewers} vues
+          </div>
+          <CreateButton onClick={() => setShowModal(true)} whileTap={{ scale: 0.95 }}>
+            + Programmer
+          </CreateButton>
+        </div>
       </HeaderSection>
       
       <TabsContainer>
@@ -599,12 +691,14 @@ const LiveManagement = () => {
       </TabsContainer>
       
       <LiveList>
-        {loading ? (
-          <div style={{ textAlign: 'center', padding: 40 }}>Chargement...</div>
-        ) : activeTab === 'upcoming' ? (
+        {activeTab === 'upcoming' ? (
           upcomingLives.length === 0 ? (
             <div style={{ textAlign: 'center', padding: 40, color: '#888' }}>
+              <div style={{ fontSize: 48, marginBottom: 16 }}>📅</div>
               Aucun live programmé
+              <div style={{ fontSize: 13, marginTop: 8 }}>
+                Cliquez sur "+ Programmer" pour créer votre premier live
+              </div>
             </div>
           ) : (
             upcomingLives.map(live => (
@@ -648,6 +742,7 @@ const LiveManagement = () => {
         ) : (
           replays.length === 0 ? (
             <div style={{ textAlign: 'center', padding: 40, color: '#888' }}>
+              <div style={{ fontSize: 48, marginBottom: 16 }}>🎬</div>
               Aucun replay disponible
             </div>
           ) : (

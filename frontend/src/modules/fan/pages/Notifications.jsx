@@ -1,5 +1,5 @@
 // src/modules/fan/pages/Notifications.jsx
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import styled from 'styled-components'
 import { motion, AnimatePresence } from 'framer-motion'
@@ -9,6 +9,7 @@ import { Avatar } from '../../shared/components/ui/Avatar'
 import { Button } from '../../shared/components/ui/Button'
 import { useAuth } from '../../shared/context/AuthContext'
 import { supabase } from '../../../config/supabase'
+import { toast } from 'react-hot-toast'
 
 const Container = styled.div`
   min-height: 100vh;
@@ -128,6 +129,14 @@ const EmptyState = styled.div`
   }
 `
 
+const LoadingSpinner = styled.div`
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 40px;
+  color: ${props => props.theme.textSecondary};
+`
+
 const tabs = [
   { id: 'all', label: 'Toutes' },
   { id: 'unread', label: 'Non lues' },
@@ -163,6 +172,29 @@ const Notifications = () => {
   const [notifications, setNotifications] = useState([])
   const [loading, setLoading] = useState(true)
 
+  const loadNotifications = useCallback(async () => {
+    if (!user?.id) return
+    
+    setLoading(true)
+    try {
+      const { data, error } = await supabase
+        .from('notifications')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false })
+      
+      if (error) throw error
+      setNotifications(data || [])
+      
+      console.log('🔔 Notifications chargées:', data?.length)
+    } catch (error) {
+      console.error('Error loading notifications:', error)
+      toast.error('Erreur lors du chargement des notifications')
+    } finally {
+      setLoading(false)
+    }
+  }, [user?.id])
+
   useEffect(() => {
     loadNotifications()
     
@@ -176,37 +208,20 @@ const Notifications = () => {
         filter: `user_id=eq.${user.id}`,
       }, (payload) => {
         setNotifications(prev => [payload.new, ...prev])
+        console.log('🔔 Nouvelle notification reçue:', payload.new)
       })
       .subscribe()
     
     return () => {
       subscription.unsubscribe()
     }
-  }, [])
-
-  const loadNotifications = async () => {
-    setLoading(true)
-    try {
-      const { data, error } = await supabase
-        .from('notifications')
-        .select('*')
-        .eq('user_id', user.id)
-        .order('created_at', { ascending: false })
-      
-      if (error) throw error
-      setNotifications(data || [])
-    } catch (error) {
-      console.error('Error loading notifications:', error)
-    } finally {
-      setLoading(false)
-    }
-  }
+  }, [loadNotifications, user?.id])
 
   const markAsRead = async (notificationId) => {
     try {
       const { error } = await supabase
         .from('notifications')
-        .update({ is_read: true })
+        .update({ is_read: true, read_at: new Date().toISOString() })
         .eq('id', notificationId)
       
       if (error) throw error
@@ -214,8 +229,11 @@ const Notifications = () => {
       setNotifications(prev =>
         prev.map(n => n.id === notificationId ? { ...n, is_read: true } : n)
       )
+      
+      console.log('✅ Notification marquée comme lue:', notificationId)
     } catch (error) {
       console.error('Error marking notification as read:', error)
+      toast.error('Erreur lors du marquage')
     }
   }
 
@@ -223,7 +241,7 @@ const Notifications = () => {
     try {
       const { error } = await supabase
         .from('notifications')
-        .update({ is_read: true })
+        .update({ is_read: true, read_at: new Date().toISOString() })
         .eq('user_id', user.id)
         .eq('is_read', false)
       
@@ -232,8 +250,12 @@ const Notifications = () => {
       setNotifications(prev =>
         prev.map(n => ({ ...n, is_read: true }))
       )
+      
+      toast.success('Toutes les notifications ont été marquées comme lues')
+      console.log('✅ Toutes les notifications marquées comme lues')
     } catch (error) {
       console.error('Error marking all as read:', error)
+      toast.error('Erreur lors du marquage')
     }
   }
 
@@ -244,6 +266,8 @@ const Notifications = () => {
     
     // Rediriger selon le type
     const data = notification.data
+    console.log('🔔 Clic sur notification:', notification.type, data)
+    
     switch (notification.type) {
       case 'new_match':
         navigate('/fan/messages')
@@ -271,6 +295,7 @@ const Notifications = () => {
         navigate('/fan/chill')
         break
       default:
+        console.log('🔔 Type de notification non géré:', notification.type)
         break
     }
   }
@@ -293,6 +318,18 @@ const Notifications = () => {
   })
 
   const unreadCount = notifications.filter(n => !n.is_read).length
+
+  if (loading && notifications.length === 0) {
+    return (
+      <Container>
+        <Header title="Notifications" showBack />
+        <LoadingSpinner>
+          <div>Chargement des notifications...</div>
+        </LoadingSpinner>
+        <BottomNavigation />
+      </Container>
+    )
+  }
 
   return (
     <Container>
@@ -322,14 +359,14 @@ const Notifications = () => {
         ))}
       </TabsContainer>
       
-      {loading ? (
-        <div style={{ textAlign: 'center', padding: 40 }}>Chargement...</div>
-      ) : filteredNotifications.length === 0 ? (
+      {filteredNotifications.length === 0 ? (
         <EmptyState>
           <div className="icon">🔔</div>
           <div>Aucune notification</div>
           <div style={{ fontSize: 13, marginTop: 8 }}>
-            Les notifications apparaîtront ici
+            {activeTab === 'unread' 
+              ? "Vous n'avez pas de notifications non lues"
+              : "Les notifications apparaîtront ici"}
           </div>
         </EmptyState>
       ) : (

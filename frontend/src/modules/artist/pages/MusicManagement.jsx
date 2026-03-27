@@ -1,5 +1,5 @@
 // src/modules/artist/pages/MusicManagement.jsx
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import styled from 'styled-components'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Header } from '../../shared/components/layout/Header'
@@ -8,6 +8,7 @@ import { Button } from '../../shared/components/ui/Button'
 import { MusicPlayer } from '../../shared/components/layout/MusicPlayer'
 import { useAuth } from '../../shared/context/AuthContext'
 import { supabase } from '../../../config/supabase'
+import { toast } from 'react-hot-toast'
 
 const Container = styled.div`
   min-height: 100vh;
@@ -111,6 +112,10 @@ const ActionButton = styled(motion.button)`
   font-size: 20px;
   cursor: pointer;
   color: ${props => props.theme.textSecondary};
+  
+  &:hover {
+    color: ${props => props.theme.primary};
+  }
 `
 
 const Modal = styled(motion.div)`
@@ -229,6 +234,14 @@ const ModalFooter = styled.div`
   gap: 12px;
 `
 
+const LoadingSpinner = styled.div`
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 40px;
+  color: ${props => props.theme.textSecondary};
+`
+
 const MusicManagement = () => {
   const [activeTab, setActiveTab] = useState('tracks')
   const [tracks, setTracks] = useState([])
@@ -247,39 +260,55 @@ const MusicManagement = () => {
   
   const { user } = useAuth()
 
-  useEffect(() => {
-    loadMusic()
-  }, [])
-
-  const loadMusic = async () => {
+  const loadMusic = useCallback(async () => {
     setLoading(true)
     try {
-      const { data: tracksData } = await supabase
+      const { data: tracksData, error: tracksError } = await supabase
         .from('tracks')
         .select('*')
         .eq('artist_id', user.id)
         .order('created_at', { ascending: false })
       
+      if (tracksError) throw tracksError
+      
       setTracks(tracksData || [])
       
-      const { data: albumsData } = await supabase
+      const { data: albumsData, error: albumsError } = await supabase
         .from('albums')
         .select('*')
         .eq('artist_id', user.id)
         .order('created_at', { ascending: false })
       
+      if (albumsError) throw albumsError
+      
       setAlbums(albumsData || [])
+      
+      console.log('✅ Musique chargée:', {
+        tracks: tracksData?.length || 0,
+        albums: albumsData?.length || 0,
+        timestamp: new Date().toISOString()
+      })
     } catch (error) {
       console.error('Error loading music:', error)
+      toast.error('Erreur lors du chargement de la musique')
     } finally {
       setLoading(false)
     }
-  }
+  }, [user.id])
+
+  useEffect(() => {
+    loadMusic()
+  }, [loadMusic])
 
   const handleFileChange = (e) => {
     const file = e.target.files[0]
     if (file) {
       setFormData({ ...formData, audio_file: file })
+      console.log('🎵 Fichier audio sélectionné:', {
+        name: file.name,
+        size: `${(file.size / 1024 / 1024).toFixed(2)} MB`,
+        type: file.type
+      })
     }
   }
 
@@ -288,6 +317,11 @@ const MusicManagement = () => {
     if (file) {
       const url = URL.createObjectURL(file)
       setFormData({ ...formData, cover_url: url })
+      console.log('🖼️ Image de couverture sélectionnée:', {
+        name: file.name,
+        size: `${(file.size / 1024).toFixed(2)} KB`,
+        type: file.type
+      })
     }
   }
 
@@ -301,6 +335,14 @@ const MusicManagement = () => {
     
     if (error) throw error
     
+    // Sauvegarder les informations du fichier uploadé
+    console.log('✅ Fichier uploadé avec succès:', {
+      path: data.path,
+      id: data.id,
+      bucketId: data.bucket_id,
+      filePath: filePath
+    })
+    
     const { data: { publicUrl } } = supabase.storage
       .from('media')
       .getPublicUrl(filePath)
@@ -309,7 +351,10 @@ const MusicManagement = () => {
   }
 
   const handleSubmit = async () => {
-    if (!formData.title || !formData.audio_file) return
+    if (!formData.title || !formData.audio_file) {
+      toast.error('Veuillez remplir tous les champs obligatoires')
+      return
+    }
     
     setUploading(true)
     try {
@@ -325,7 +370,7 @@ const MusicManagement = () => {
         coverUrl = await uploadFile(coverFile, 'covers')
       }
       
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from('tracks')
         .insert({
           artist_id: user.id,
@@ -335,9 +380,22 @@ const MusicManagement = () => {
           is_public: formData.visibility === 'public',
           cover_url: coverUrl || formData.cover_url,
           audio_url: audioUrl,
+          created_at: new Date().toISOString()
         })
+        .select()
       
       if (error) throw error
+      
+      if (data && data[0]) {
+        console.log('🎵 Morceau publié avec succès:', {
+          trackId: data[0].id,
+          title: data[0].title,
+          genre: data[0].genre,
+          visibility: data[0].is_public ? 'public' : 'private'
+        })
+        
+        toast.success('Morceau publié avec succès !')
+      }
       
       setShowModal(false)
       setFormData({
@@ -351,24 +409,56 @@ const MusicManagement = () => {
       loadMusic()
     } catch (error) {
       console.error('Error uploading track:', error)
+      toast.error('Erreur lors de la publication du morceau')
     } finally {
       setUploading(false)
     }
   }
 
   const handleDeleteTrack = async (trackId) => {
+    if (!window.confirm('Êtes-vous sûr de vouloir supprimer ce morceau ? Cette action est irréversible.')) {
+      return
+    }
+    
     try {
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from('tracks')
         .delete()
         .eq('id', trackId)
+        .select()
       
       if (error) throw error
+      
+      if (data && data[0]) {
+        console.log('🗑️ Morceau supprimé:', {
+          trackId: data[0].id,
+          title: data[0].title
+        })
+        
+        toast.success('Morceau supprimé avec succès')
+      }
       
       loadMusic()
     } catch (error) {
       console.error('Error deleting track:', error)
+      toast.error('Erreur lors de la suppression du morceau')
     }
+  }
+
+  const handleEditTrack = (track) => {
+    console.log('✏️ Édition du morceau:', track.title)
+    // Implémenter la logique d'édition
+    toast.info('Fonctionnalité d\'édition à venir')
+  }
+
+  const handleViewStats = (track) => {
+    console.log('📊 Statistiques du morceau:', {
+      title: track.title,
+      plays: track.play_count,
+      likes: track.like_count,
+      comments: track.comment_count
+    })
+    toast.info(`Statistiques: ${track.play_count || 0} écoutes, ${track.like_count || 0} likes`)
   }
 
   const formatNumber = (num) => {
@@ -377,15 +467,40 @@ const MusicManagement = () => {
     return num?.toString() || '0'
   }
 
+  // Calculer les statistiques totales
+  const totalStats = {
+    totalPlays: tracks.reduce((sum, t) => sum + (t.play_count || 0), 0),
+    totalLikes: tracks.reduce((sum, t) => sum + (t.like_count || 0), 0),
+    totalComments: tracks.reduce((sum, t) => sum + (t.comment_count || 0), 0)
+  }
+
+  if (loading) {
+    return (
+      <Container>
+        <Header title="Ma Musique" showProfile showBack />
+        <LoadingSpinner>
+          <div>Chargement de votre musique...</div>
+        </LoadingSpinner>
+        <MusicPlayer />
+        <BottomNavigation />
+      </Container>
+    )
+  }
+
   return (
     <Container>
       <Header title="Ma Musique" showProfile showBack />
       
       <HeaderSection>
         <Title>Ma Musique</Title>
-        <AddButton onClick={() => setShowModal(true)} whileTap={{ scale: 0.95 }}>
-          +
-        </AddButton>
+        <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+          <div style={{ fontSize: 12, color: '#888' }}>
+            📊 {formatNumber(totalStats.totalPlays)} écoutes • {formatNumber(totalStats.totalLikes)} likes
+          </div>
+          <AddButton onClick={() => setShowModal(true)} whileTap={{ scale: 0.95 }}>
+            +
+          </AddButton>
+        </div>
       </HeaderSection>
       
       <TabsContainer>
@@ -405,11 +520,13 @@ const MusicManagement = () => {
       
       {activeTab === 'tracks' ? (
         <TracksList>
-          {loading ? (
-            <div style={{ textAlign: 'center', padding: 40 }}>Chargement...</div>
-          ) : tracks.length === 0 ? (
+          {tracks.length === 0 ? (
             <div style={{ textAlign: 'center', padding: 40, color: '#888' }}>
+              <div style={{ fontSize: 48, marginBottom: 16 }}>🎵</div>
               Aucun morceau publié
+              <div style={{ fontSize: 13, marginTop: 8 }}>
+                Cliquez sur "+" pour publier votre premier morceau
+              </div>
             </div>
           ) : (
             tracks.map(track => (
@@ -424,15 +541,24 @@ const MusicManagement = () => {
                   </TrackStats>
                 </TrackInfo>
                 <TrackActions>
-                  <ActionButton whileTap={{ scale: 0.9 }}>
+                  <ActionButton 
+                    whileTap={{ scale: 0.9 }}
+                    onClick={() => handleViewStats(track)}
+                    title="Voir les statistiques"
+                  >
                     📊
                   </ActionButton>
-                  <ActionButton whileTap={{ scale: 0.9 }}>
+                  <ActionButton 
+                    whileTap={{ scale: 0.9 }}
+                    onClick={() => handleEditTrack(track)}
+                    title="Modifier"
+                  >
                     ✏️
                   </ActionButton>
                   <ActionButton
                     whileTap={{ scale: 0.9 }}
                     onClick={() => handleDeleteTrack(track.id)}
+                    title="Supprimer"
                   >
                     🗑️
                   </ActionButton>
@@ -445,6 +571,7 @@ const MusicManagement = () => {
         <TracksList>
           {albums.length === 0 ? (
             <div style={{ textAlign: 'center', padding: 40, color: '#888' }}>
+              <div style={{ fontSize: 48, marginBottom: 16 }}>💿</div>
               Aucun album publié
             </div>
           ) : (

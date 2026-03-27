@@ -1,5 +1,5 @@
 // src/modules/shared/pages/BlockUser.jsx
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import styled from 'styled-components'
 import { motion } from 'framer-motion'
@@ -86,17 +86,23 @@ const EmptyState = styled.div`
   }
 `
 
+const LoadingSpinner = styled.div`
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 40px;
+  color: ${props => props.theme.textSecondary};
+`
+
 const BlockUser = () => {
   const navigate = useNavigate()
   const { user } = useAuth()
   const [blockedUsers, setBlockedUsers] = useState([])
   const [loading, setLoading] = useState(true)
 
-  useEffect(() => {
-    loadBlockedUsers()
-  }, [])
-
-  const loadBlockedUsers = async () => {
+  const loadBlockedUsers = useCallback(async () => {
+    if (!user?.id) return
+    
     setLoading(true)
     try {
       const { data, error } = await supabase
@@ -106,17 +112,25 @@ const BlockUser = () => {
           blocked:users!blocks_blocked_id_fkey(id, username, display_name, avatar_url)
         `)
         .eq('blocker_id', user.id)
+        .order('created_at', { ascending: false })
       
       if (error) throw error
       setBlockedUsers(data || [])
+      
+      console.log('🔒 Utilisateurs bloqués chargés:', data?.length)
     } catch (error) {
       console.error('Error loading blocked users:', error)
+      toast.error('Erreur lors du chargement des utilisateurs bloqués')
     } finally {
       setLoading(false)
     }
-  }
+  }, [user?.id])
 
-  const handleUnblock = async (blockedUserId) => {
+  useEffect(() => {
+    loadBlockedUsers()
+  }, [loadBlockedUsers])
+
+  const handleUnblock = async (blockedUserId, blockedUsername) => {
     try {
       const { error } = await supabase
         .from('blocks')
@@ -127,7 +141,8 @@ const BlockUser = () => {
       if (error) throw error
       
       setBlockedUsers(prev => prev.filter(b => b.blocked_id !== blockedUserId))
-      toast.success('Utilisateur débloqué')
+      toast.success(`@${blockedUsername} a été débloqué`)
+      console.log('🔓 Utilisateur débloqué:', { blockedUserId, blockedUsername })
     } catch (error) {
       console.error('Error unblocking user:', error)
       toast.error('Erreur lors du déblocage')
@@ -136,6 +151,17 @@ const BlockUser = () => {
 
   const getBackPath = () => {
     return '/fan/settings'
+  }
+
+  if (loading) {
+    return (
+      <Container>
+        <Header title="Utilisateurs bloqués" showBack onBack={() => navigate(getBackPath())} />
+        <LoadingSpinner>
+          <div>Chargement de la liste...</div>
+        </LoadingSpinner>
+      </Container>
+    )
   }
 
   return (
@@ -148,9 +174,7 @@ const BlockUser = () => {
           Les utilisateurs bloqués ne peuvent pas vous contacter, voir votre profil ou interagir avec vous.
         </Subtitle>
         
-        {loading ? (
-          <div style={{ textAlign: 'center', padding: 40 }}>Chargement...</div>
-        ) : blockedUsers.length === 0 ? (
+        {blockedUsers.length === 0 ? (
           <EmptyState>
             <div className="icon">🔒</div>
             <div>Aucun utilisateur bloqué</div>
@@ -159,27 +183,37 @@ const BlockUser = () => {
             </div>
           </EmptyState>
         ) : (
-          <BlockedList>
-            {blockedUsers.map(block => (
-              <BlockedItem key={block.id}>
-                <Avatar
-                  src={block.blocked?.avatar_url}
-                  name={block.blocked?.display_name}
-                  size={48}
-                />
-                <UserInfo>
-                  <UserName>{block.blocked?.display_name || block.blocked?.username}</UserName>
-                  <UserUsername>@{block.blocked?.username}</UserUsername>
-                </UserInfo>
-                <UnblockButton
-                  onClick={() => handleUnblock(block.blocked_id)}
-                  whileTap={{ scale: 0.95 }}
+          <>
+            <div style={{ marginBottom: 16, fontSize: 14, color: '#888' }}>
+              {blockedUsers.length} utilisateur{blockedUsers.length > 1 ? 's' : ''} bloqué{blockedUsers.length > 1 ? 's' : ''}
+            </div>
+            <BlockedList>
+              {blockedUsers.map(block => (
+                <BlockedItem
+                  key={block.id}
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -20 }}
                 >
-                  Débloquer
-                </UnblockButton>
-              </BlockedItem>
-            ))}
-          </BlockedList>
+                  <Avatar
+                    src={block.blocked?.avatar_url}
+                    name={block.blocked?.display_name}
+                    size={48}
+                  />
+                  <UserInfo>
+                    <UserName>{block.blocked?.display_name || block.blocked?.username}</UserName>
+                    <UserUsername>@{block.blocked?.username}</UserUsername>
+                  </UserInfo>
+                  <UnblockButton
+                    onClick={() => handleUnblock(block.blocked_id, block.blocked?.username)}
+                    whileTap={{ scale: 0.95 }}
+                  >
+                    Débloquer
+                  </UnblockButton>
+                </BlockedItem>
+              ))}
+            </BlockedList>
+          </>
         )}
       </Content>
     </Container>

@@ -4,6 +4,7 @@ import styled from 'styled-components'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useAuth } from '../../../shared/context/AuthContext'
 import { supabase } from '../../../../config/supabase'
+import { toast } from 'react-hot-toast'
 
 const Overlay = styled(motion.div)`
   position: fixed;
@@ -133,6 +134,13 @@ export const SparkCreation = ({ onClose, onSuccess }) => {
     
     setMedia(url)
     setMediaType(type)
+    
+    console.log('📁 Fichier sélectionné:', {
+      name: file.name,
+      size: `${(file.size / 1024 / 1024).toFixed(2)} MB`,
+      type: file.type,
+      mediaType: type
+    })
   }
 
   const handleLiveToggle = () => {
@@ -141,6 +149,7 @@ export const SparkCreation = ({ onClose, onSuccess }) => {
       setMedia(null)
       setMediaType(null)
     }
+    console.log('🔴 Mode live:', !isLive ? 'activé' : 'désactivé')
   }
 
   const uploadMedia = async (file) => {
@@ -153,6 +162,16 @@ export const SparkCreation = ({ onClose, onSuccess }) => {
     
     if (error) throw error
     
+    // Utiliser data pour les logs et la traçabilité
+    console.log('✅ Fichier uploadé avec succès:', {
+      fileName: data.path,
+      fileId: data.id,
+      bucketId: data.bucket_id,
+      filePath: filePath,
+      size: file.size,
+      uploadedAt: new Date().toISOString()
+    })
+    
     const { data: { publicUrl } } = supabase.storage
       .from('media')
       .getPublicUrl(filePath)
@@ -161,20 +180,34 @@ export const SparkCreation = ({ onClose, onSuccess }) => {
   }
 
   const handlePublish = async () => {
+    if (!media && !isLive) {
+      toast.error('Veuillez sélectionner un média ou activer le live')
+      return
+    }
+    
     setUploading(true)
     
     try {
       let mediaUrl = null
+      let uploadedFileInfo = null
       
       if (media && !isLive) {
         const file = fileInputRef.current.files[0]
         mediaUrl = await uploadMedia(file)
+        
+        // Enregistrer les informations du fichier uploadé (optionnel)
+        uploadedFileInfo = {
+          fileName: file.name,
+          fileSize: file.size,
+          fileType: file.type,
+          uploadedAt: new Date().toISOString()
+        }
       }
       
       const expiresAt = new Date()
       expiresAt.setMinutes(expiresAt.getMinutes() + duration)
       
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from('sparks')
         .insert({
           user_id: user.id,
@@ -184,13 +217,29 @@ export const SparkCreation = ({ onClose, onSuccess }) => {
           expires_at: expiresAt.toISOString(),
           description: caption,
           is_live: isLive,
+          metadata: uploadedFileInfo ? { fileInfo: uploadedFileInfo } : null
         })
+        .select()
       
       if (error) throw error
+      
+      // Utiliser data pour confirmer la publication
+      if (data && data[0]) {
+        console.log('✨ Spark publié avec succès:', {
+          sparkId: data[0].id,
+          type: data[0].type,
+          duration: data[0].duration_minutes,
+          expiresAt: data[0].expires_at,
+          isLive: data[0].is_live
+        })
+        
+        toast.success('Spark publié avec succès !')
+      }
       
       onSuccess()
     } catch (error) {
       console.error('Error publishing spark:', error)
+      toast.error('Erreur lors de la publication du Spark')
     } finally {
       setUploading(false)
     }

@@ -1,5 +1,5 @@
 // frontend/src/modules/fan/pages/Wishlist.jsx
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import styled from 'styled-components'
 import { motion } from 'framer-motion'
@@ -64,6 +64,11 @@ const ProductCard = styled(motion.div)`
   overflow: hidden;
   cursor: pointer;
   position: relative;
+  transition: transform 0.2s ease;
+  
+  &:hover {
+    transform: translateY(-4px);
+  }
 `
 
 const ProductImage = styled.img`
@@ -104,6 +109,11 @@ const RemoveButton = styled(motion.button)`
   cursor: pointer;
   color: white;
   font-size: 18px;
+  backdrop-filter: blur(4px);
+  
+  &:hover {
+    background: rgba(0,0,0,0.8);
+  }
 `
 
 const EmptyState = styled.div`
@@ -117,6 +127,39 @@ const EmptyState = styled.div`
   }
 `
 
+const StatsBar = styled.div`
+  display: flex;
+  gap: 16px;
+  margin: 0 16px 16px;
+  padding: 12px;
+  background: ${props => props.theme.surface};
+  border-radius: 12px;
+  justify-content: space-around;
+`
+
+const StatItem = styled.div`
+  text-align: center;
+`
+
+const StatValue = styled.div`
+  font-size: 18px;
+  font-weight: 700;
+  color: ${props => props.theme.primary};
+`
+
+const StatLabel = styled.div`
+  font-size: 11px;
+  color: ${props => props.theme.textSecondary};
+`
+
+const LoadingSpinner = styled.div`
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 40px;
+  color: ${props => props.theme.textSecondary};
+`
+
 const Wishlist = () => {
   const navigate = useNavigate()
   const { user } = useAuth()
@@ -125,11 +168,7 @@ const Wishlist = () => {
   const [tracks, setTracks] = useState([])
   const [loading, setLoading] = useState(true)
 
-  useEffect(() => {
-    loadWishlist()
-  }, [activeTab])
-
-  const loadWishlist = async () => {
+  const loadWishlist = useCallback(async () => {
     setLoading(true)
     try {
       if (activeTab === 'products') {
@@ -140,7 +179,10 @@ const Wishlist = () => {
           .order('created_at', { ascending: false })
         
         if (error) throw error
-        setProducts(data?.map(f => f.product) || [])
+        const productList = data?.map(f => f.product) || []
+        setProducts(productList)
+        
+        console.log('🛍️ Produits favoris chargés:', productList.length)
       } else {
         const { data, error } = await supabase
           .from('track_likes')
@@ -149,25 +191,36 @@ const Wishlist = () => {
           .order('created_at', { ascending: false })
         
         if (error) throw error
-        setTracks(data?.map(l => l.track) || [])
+        const trackList = data?.map(l => l.track) || []
+        setTracks(trackList)
+        
+        console.log('🎵 Morceaux favoris chargés:', trackList.length)
       }
     } catch (error) {
       console.error('Error loading wishlist:', error)
+      toast.error('Erreur lors du chargement de la wishlist')
     } finally {
       setLoading(false)
     }
-  }
+  }, [activeTab, user.id])
+
+  useEffect(() => {
+    loadWishlist()
+  }, [loadWishlist])
 
   const handleRemoveProduct = async (productId) => {
     try {
-      await supabase
+      const { error } = await supabase
         .from('favorites')
         .delete()
         .eq('user_id', user.id)
         .eq('product_id', productId)
       
+      if (error) throw error
+      
       setProducts(prev => prev.filter(p => p.id !== productId))
       toast.success('Produit retiré des favoris')
+      console.log('🛍️ Produit retiré des favoris:', productId)
     } catch (error) {
       console.error('Error removing product:', error)
       toast.error('Erreur lors de la suppression')
@@ -176,18 +229,39 @@ const Wishlist = () => {
 
   const handleRemoveTrack = async (trackId) => {
     try {
-      await supabase
+      const { error } = await supabase
         .from('track_likes')
         .delete()
         .eq('user_id', user.id)
         .eq('track_id', trackId)
       
+      if (error) throw error
+      
       setTracks(prev => prev.filter(t => t.id !== trackId))
       toast.success('Morceau retiré des favoris')
+      console.log('🎵 Morceau retiré des favoris:', trackId)
     } catch (error) {
       console.error('Error removing track:', error)
       toast.error('Erreur lors de la suppression')
     }
+  }
+
+  const totalItems = activeTab === 'products' ? products.length : tracks.length
+  const totalValue = activeTab === 'products' 
+    ? products.reduce((sum, p) => sum + (p.price || 0), 0)
+    : 0
+
+  if (loading) {
+    return (
+      <Container>
+        <Header title="Mes favoris" showBack />
+        <LoadingSpinner>
+          <div>Chargement de votre wishlist...</div>
+        </LoadingSpinner>
+        <MusicPlayer />
+        <BottomNavigation />
+      </Container>
+    )
   }
 
   return (
@@ -197,6 +271,21 @@ const Wishlist = () => {
       <HeaderSection>
         <Title>Ma wishlist</Title>
       </HeaderSection>
+      
+      {totalItems > 0 && (
+        <StatsBar>
+          <StatItem>
+            <StatValue>{totalItems}</StatValue>
+            <StatLabel>Articles</StatLabel>
+          </StatItem>
+          {activeTab === 'products' && totalValue > 0 && (
+            <StatItem>
+              <StatValue>{totalValue}€</StatValue>
+              <StatLabel>Valeur totale</StatLabel>
+            </StatItem>
+          )}
+        </StatsBar>
+      )}
       
       <TabsContainer>
         <Tab
@@ -213,9 +302,7 @@ const Wishlist = () => {
         </Tab>
       </TabsContainer>
       
-      {loading ? (
-        <div style={{ textAlign: 'center', padding: 40 }}>Chargement...</div>
-      ) : activeTab === 'products' ? (
+      {activeTab === 'products' ? (
         products.length === 0 ? (
           <EmptyState>
             <div className="icon">🛍️</div>
@@ -248,6 +335,11 @@ const Wishlist = () => {
                 <ProductInfo>
                   <ProductName>{product.name}</ProductName>
                   <ProductPrice>{product.price}€</ProductPrice>
+                  {product.seller && (
+                    <div style={{ fontSize: 11, color: '#888', marginTop: 4 }}>
+                      par @{product.seller.username}
+                    </div>
+                  )}
                 </ProductInfo>
               </ProductCard>
             ))}
@@ -286,6 +378,11 @@ const Wishlist = () => {
                 <ProductInfo>
                   <ProductName>{track.title}</ProductName>
                   <ProductPrice>{track.artist?.username}</ProductPrice>
+                  {track.duration && (
+                    <div style={{ fontSize: 11, color: '#888', marginTop: 4 }}>
+                      {Math.floor(track.duration / 60)}:{(track.duration % 60).toString().padStart(2, '0')}
+                    </div>
+                  )}
                 </ProductInfo>
               </ProductCard>
             ))}

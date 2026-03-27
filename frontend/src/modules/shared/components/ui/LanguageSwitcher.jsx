@@ -77,6 +77,7 @@ export const LanguageSwitcher = () => {
       <CurrentLanguage
         onClick={() => setIsOpen(!isOpen)}
         whileTap={{ scale: 0.95 }}
+        title={t('common.language_selector')}
       >
         <FlagIcon>{currentLanguage.flag}</FlagIcon>
         <span>{currentLanguage.name}</span>

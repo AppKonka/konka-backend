@@ -1,5 +1,5 @@
 // src/modules/fan/pages/SellerPage.jsx
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import styled from 'styled-components'
 import { motion } from 'framer-motion'
@@ -10,6 +10,7 @@ import { Button } from '../../shared/components/ui/Button'
 import { MusicPlayer } from '../../shared/components/layout/MusicPlayer'
 import { useAuth } from '../../shared/context/AuthContext'
 import { supabase } from '../../../config/supabase'
+import { toast } from 'react-hot-toast'
 
 const Container = styled.div`
   min-height: 100vh;
@@ -105,6 +106,11 @@ const ProductCard = styled(motion.div)`
   border-radius: 12px;
   overflow: hidden;
   cursor: pointer;
+  transition: transform 0.2s ease;
+  
+  &:hover {
+    transform: translateY(-4px);
+  }
 `
 
 const ProductImage = styled.img`
@@ -130,6 +136,12 @@ const ProductPrice = styled.div`
   font-weight: 600;
 `
 
+const ProductStock = styled.div`
+  font-size: 11px;
+  color: ${props => props.theme.textSecondary};
+  margin-top: 4px;
+`
+
 const ReviewItem = styled.div`
   display: flex;
   gap: 12px;
@@ -148,6 +160,7 @@ const ReviewHeader = styled.div`
   align-items: baseline;
   gap: 8px;
   margin-bottom: 4px;
+  flex-wrap: wrap;
 `
 
 const ReviewUsername = styled.span`
@@ -160,6 +173,12 @@ const ReviewRating = styled.div`
   display: flex;
   gap: 2px;
   color: #FFD700;
+`
+
+const ReviewDate = styled.span`
+  font-size: 11px;
+  color: ${props => props.theme.textSecondary};
+  margin-left: auto;
 `
 
 const ReviewComment = styled.p`
@@ -180,6 +199,15 @@ const FollowButton = styled(motion.button)`
   font-size: 14px;
   font-weight: 500;
   cursor: pointer;
+  box-shadow: ${props => props.theme.shadow.sm};
+`
+
+const LoadingSpinner = styled.div`
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 40px;
+  color: ${props => props.theme.textSecondary};
 `
 
 const SellerPage = () => {
@@ -198,12 +226,7 @@ const SellerPage = () => {
   })
   const [loading, setLoading] = useState(true)
 
-  useEffect(() => {
-    loadSellerData()
-    checkFollowStatus()
-  }, [sellerId])
-
-  const loadSellerData = async () => {
+  const loadSellerData = useCallback(async () => {
     setLoading(true)
     try {
       // Charger les infos du vendeur
@@ -249,14 +272,22 @@ const SellerPage = () => {
         rating: avgRating
       })
       
+      console.log('🛍️ Vendeur chargé:', {
+        sellerId,
+        storeName: sellerData?.sellers?.store_name,
+        products: productsData?.length,
+        sales: totalSales,
+        rating: avgRating
+      })
     } catch (error) {
       console.error('Error loading seller:', error)
+      toast.error('Erreur lors du chargement de la boutique')
     } finally {
       setLoading(false)
     }
-  }
+  }, [sellerId])
 
-  const checkFollowStatus = async () => {
+  const checkFollowStatus = useCallback(async () => {
     if (!user) return
     
     try {
@@ -268,10 +299,17 @@ const SellerPage = () => {
       
       if (error) throw error
       setIsFollowing(data && data.length > 0)
+      
+      console.log('👥 Statut abonnement boutique:', data?.length > 0)
     } catch (error) {
       console.error('Error checking follow status:', error)
     }
-  }
+  }, [user, sellerId])
+
+  useEffect(() => {
+    loadSellerData()
+    checkFollowStatus()
+  }, [loadSellerData, checkFollowStatus])
 
   const handleFollow = async () => {
     if (!user) {
@@ -281,37 +319,83 @@ const SellerPage = () => {
     
     try {
       if (isFollowing) {
-        await supabase
+        const { error } = await supabase
           .from('follows')
           .delete()
           .eq('follower_id', user.id)
           .eq('following_id', sellerId)
+        
+        if (error) throw error
         setIsFollowing(false)
+        toast.success(`Vous ne suivez plus ${seller?.sellers?.store_name || seller?.username}`)
+        console.log('👥 Désabonnement boutique réussi:', sellerId)
       } else {
-        await supabase
+        const { data, error } = await supabase
           .from('follows')
           .insert({
             follower_id: user.id,
-            following_id: sellerId
+            following_id: sellerId,
+            created_at: new Date().toISOString()
           })
+          .select()
+        
+        if (error) throw error
         setIsFollowing(true)
+        toast.success(`Vous suivez maintenant ${seller?.sellers?.store_name || seller?.username}`)
+        console.log('👥 Abonnement boutique réussi:', {
+          sellerId,
+          followId: data?.[0]?.id
+        })
       }
     } catch (error) {
       console.error('Error toggling follow:', error)
+      toast.error('Erreur lors de l\'opération')
     }
   }
 
+  const handleProductClick = (product) => {
+    console.log('🛍️ Produit sélectionné:', {
+      productId: product.id,
+      name: product.name,
+      price: product.price
+    })
+    navigate(`/fan/shopping/product/${product.id}`)
+  }
+
   const renderStars = (rating) => {
-    return [...Array(5)].map((_, i) => (
-      <span key={i}>{i < Math.floor(rating) ? '⭐' : '☆'}</span>
-    ))
+    const fullStars = Math.floor(rating)
+    const hasHalfStar = rating % 1 >= 0.5
+    const emptyStars = 5 - fullStars - (hasHalfStar ? 1 : 0)
+    
+    return (
+      <>
+        {[...Array(fullStars)].map((_, i) => (
+          <span key={`full-${i}`}>⭐</span>
+        ))}
+        {hasHalfStar && <span>⭐</span>}
+        {[...Array(emptyStars)].map((_, i) => (
+          <span key={`empty-${i}`}>☆</span>
+        ))}
+      </>
+    )
+  }
+
+  const formatDate = (date) => {
+    return new Date(date).toLocaleDateString('fr-FR', {
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric'
+    })
   }
 
   if (loading) {
     return (
       <Container>
         <Header title="Boutique" showBack />
-        <div style={{ textAlign: 'center', padding: 40 }}>Chargement...</div>
+        <LoadingSpinner>
+          <div>Chargement de la boutique...</div>
+        </LoadingSpinner>
+        <MusicPlayer />
         <BottomNavigation />
       </Container>
     )
@@ -321,7 +405,13 @@ const SellerPage = () => {
     return (
       <Container>
         <Header title="Boutique" showBack />
-        <div style={{ textAlign: 'center', padding: 40 }}>Boutique non trouvée</div>
+        <div style={{ textAlign: 'center', padding: 40 }}>
+          <div style={{ fontSize: 48, marginBottom: 16 }}>🛍️</div>
+          <div>Boutique non trouvée</div>
+          <Button onClick={() => navigate('/fan/shopping')} style={{ marginTop: 20 }}>
+            Retour au shopping
+          </Button>
+        </div>
         <BottomNavigation />
       </Container>
     )
@@ -376,18 +466,23 @@ const SellerPage = () => {
       
       {products.length > 0 && (
         <>
-          <SectionTitle>Produits</SectionTitle>
+          <SectionTitle>Produits ({products.length})</SectionTitle>
           <ProductsGrid>
             {products.map(product => (
               <ProductCard
                 key={product.id}
-                onClick={() => navigate(`/fan/shopping/product/${product.id}`)}
+                onClick={() => handleProductClick(product)}
                 whileTap={{ scale: 0.98 }}
               >
                 <ProductImage src={product.images?.[0] || '/images/default-product.jpg'} />
                 <ProductInfo>
                   <ProductName>{product.name}</ProductName>
                   <ProductPrice>{product.price}€</ProductPrice>
+                  {product.stock !== undefined && (
+                    <ProductStock>
+                      {product.stock > 0 ? `📦 Stock: ${product.stock}` : '⚠️ Rupture de stock'}
+                    </ProductStock>
+                  )}
                 </ProductInfo>
               </ProductCard>
             ))}
@@ -397,7 +492,7 @@ const SellerPage = () => {
       
       {reviews.length > 0 && (
         <>
-          <SectionTitle>Avis clients</SectionTitle>
+          <SectionTitle>Avis clients ({reviews.length})</SectionTitle>
           {reviews.map(review => (
             <ReviewItem key={review.id}>
               <Avatar
@@ -409,6 +504,7 @@ const SellerPage = () => {
                 <ReviewHeader>
                   <ReviewUsername>@{review.user?.username}</ReviewUsername>
                   <ReviewRating>{renderStars(review.rating)}</ReviewRating>
+                  <ReviewDate>{formatDate(review.created_at)}</ReviewDate>
                 </ReviewHeader>
                 <ReviewComment>{review.comment}</ReviewComment>
               </ReviewContent>

@@ -1,7 +1,6 @@
-// src/modules/shared/context/PlayerContext.jsx
-import React, { createContext, useContext } from 'react'
-
-export const PlayerContext = createContext()
+// src/modules/shared/hooks/usePlayer.js
+import { useContext } from 'react'
+import { PlayerContext } from '../context/PlayerContext'
 
 export const usePlayer = () => {
   const context = useContext(PlayerContext)

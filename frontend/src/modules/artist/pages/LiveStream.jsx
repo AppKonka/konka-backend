@@ -1,5 +1,5 @@
 // src/modules/artist/pages/LiveStream.jsx
-import React, { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import styled from 'styled-components'
 import { motion, AnimatePresence } from 'framer-motion'
@@ -193,10 +193,130 @@ const LiveStream = () => {
   const [isMuted, setIsMuted] = useState(false)
   const [isCameraOn, setIsCameraOn] = useState(true)
   const [duration, setDuration] = useState(0)
+  const [liveData, setLiveData] = useState(null)
   
   const localVideoRef = useRef(null)
   const mediaStreamRef = useRef(null)
   const timerRef = useRef(null)
+
+  // Définir initCamera avec useCallback
+  const initCamera = useCallback(async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: true,
+        audio: true
+      })
+      mediaStreamRef.current = stream
+      if (localVideoRef.current) {
+        localVideoRef.current.srcObject = stream
+      }
+      
+      console.log('📷 Caméra initialisée avec succès')
+    } catch (error) {
+      console.error('Error accessing camera:', error)
+      toast.error('Impossible d\'accéder à la caméra')
+    }
+  }, [])
+
+  // Définir stopStream avec useCallback
+  const stopStream = useCallback(async () => {
+    try {
+      // Arrêter la caméra
+      if (mediaStreamRef.current) {
+        mediaStreamRef.current.getTracks().forEach(track => track.stop())
+      }
+      
+      // Mettre à jour le statut
+      const { data, error } = await supabase
+        .from('lives')
+        .update({
+          status: 'ended',
+          ended_at: new Date().toISOString(),
+          viewer_count: viewers
+        })
+        .eq('id', liveId)
+        .select()
+      
+      if (error) throw error
+      
+      if (data && data[0]) {
+        console.log('⏹️ Live terminé avec succès:', {
+          liveId: data[0].id,
+          title: data[0].title,
+          endedAt: data[0].ended_at,
+          totalViewers: viewers,
+          duration: duration
+        })
+        
+        // Sauvegarder les statistiques du live
+        await supabase
+          .from('live_stats')
+          .insert({
+            live_id: liveId,
+            duration: duration,
+            peak_viewers: viewers,
+            total_comments: comments.length,
+            ended_at: new Date().toISOString()
+          })
+      }
+      
+      if (timerRef.current) clearInterval(timerRef.current)
+      navigate('/artist/dashboard')
+      toast.success('Live terminé')
+    } catch (error) {
+      console.error('Error stopping stream:', error)
+      toast.error('Erreur lors de l\'arrêt du live')
+    }
+  }, [liveId, navigate, viewers, duration, comments.length])
+
+  // Mettre à jour les viewers en temps réel
+  const updateViewers = useCallback(async () => {
+    if (!liveId) return
+    
+    try {
+      // Récupérer le nombre de spectateurs depuis la base de données
+      const { data, error } = await supabase
+        .from('lives')
+        .select('viewer_count, title, status')
+        .eq('id', liveId)
+        .single()
+      
+      if (error) throw error
+      
+      if (data) {
+        setViewers(data.viewer_count || 0)
+        setLiveData(data)
+        
+        // Log des viewers
+        console.log(`👁️ Viewers actuels: ${data.viewer_count} - Live: ${data.title}`)
+      }
+    } catch (error) {
+      console.error('Error updating viewers:', error)
+    }
+  }, [liveId])
+
+  // Incrémenter le compteur de viewers
+  const incrementViewers = useCallback(async () => {
+    if (!liveId || !isStreaming) return
+    
+    try {
+      const { data, error } = await supabase
+        .from('lives')
+        .update({
+          viewer_count: viewers + 1
+        })
+        .eq('id', liveId)
+        .select()
+      
+      if (error) throw error
+      
+      if (data && data[0]) {
+        setViewers(data[0].viewer_count)
+      }
+    } catch (error) {
+      console.error('Error incrementing viewers:', error)
+    }
+  }, [liveId, isStreaming, viewers])
 
   useEffect(() => {
     // Initialiser la caméra
@@ -213,84 +333,71 @@ const LiveStream = () => {
           filter: `live_id=eq.${liveId}`,
         }, (payload) => {
           setComments(prev => [...prev, payload.new])
+          console.log('💬 Nouveau commentaire reçu:', payload.new)
         })
         .subscribe()
       
+      // Mettre à jour les viewers toutes les 5 secondes
+      const viewerInterval = setInterval(() => {
+        updateViewers()
+      }, 5000)
+      
       return () => {
         subscription.unsubscribe()
+        clearInterval(viewerInterval)
         stopStream()
       }
     }
-  }, [liveId])
+  }, [liveId, initCamera, stopStream, updateViewers])
 
   useEffect(() => {
     if (isStreaming) {
       timerRef.current = setInterval(() => {
         setDuration(prev => prev + 1)
       }, 1000)
+      
+      // Incrémenter les viewers au démarrage
+      incrementViewers()
     }
     
     return () => {
       if (timerRef.current) clearInterval(timerRef.current)
     }
-  }, [isStreaming])
-
-  const initCamera = async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: true,
-        audio: true
-      })
-      mediaStreamRef.current = stream
-      if (localVideoRef.current) {
-        localVideoRef.current.srcObject = stream
-      }
-    } catch (error) {
-      console.error('Error accessing camera:', error)
-      toast.error('Impossible d\'accéder à la caméra')
-    }
-  }
+  }, [isStreaming, incrementViewers])
 
   const startStream = async () => {
     try {
       // Mettre à jour le statut du live
-      await supabase
+      const { data, error } = await supabase
         .from('lives')
         .update({
           status: 'live',
-          started_at: new Date().toISOString()
+          started_at: new Date().toISOString(),
+          viewer_count: 1
         })
         .eq('id', liveId)
+        .select()
+      
+      if (error) throw error
+      
+      if (data && data[0]) {
+        console.log('🔴 Live démarré avec succès:', {
+          liveId: data[0].id,
+          title: data[0].title,
+          startedAt: data[0].started_at,
+          streamKey: `live_${Date.now()}`
+        })
+        
+        setLiveData(data[0])
+      }
       
       setIsStreaming(true)
+      setViewers(1)
+      
       toast.success('Live démarré !')
     } catch (error) {
       console.error('Error starting stream:', error)
       toast.error('Erreur lors du démarrage')
-    }
-  }
-
-  const stopStream = async () => {
-    try {
-      // Arrêter la caméra
-      if (mediaStreamRef.current) {
-        mediaStreamRef.current.getTracks().forEach(track => track.stop())
-      }
-      
-      // Mettre à jour le statut
-      await supabase
-        .from('lives')
-        .update({
-          status: 'ended',
-          ended_at: new Date().toISOString()
-        })
-        .eq('id', liveId)
-      
-      if (timerRef.current) clearInterval(timerRef.current)
-      navigate('/artist/dashboard')
-      toast.success('Live terminé')
-    } catch (error) {
-      console.error('Error stopping stream:', error)
     }
   }
 
@@ -300,6 +407,8 @@ const LiveStream = () => {
       if (audioTrack) {
         audioTrack.enabled = !audioTrack.enabled
         setIsMuted(!audioTrack.enabled)
+        
+        console.log('🎤 Microphone:', !audioTrack.enabled ? 'désactivé' : 'activé')
       }
     }
   }
@@ -310,6 +419,8 @@ const LiveStream = () => {
       if (videoTrack) {
         videoTrack.enabled = !videoTrack.enabled
         setIsCameraOn(videoTrack.enabled)
+        
+        console.log('📷 Caméra:', !videoTrack.enabled ? 'désactivée' : 'activée')
       }
     }
   }
@@ -318,16 +429,31 @@ const LiveStream = () => {
     if (!commentText.trim()) return
     
     try {
-      await supabase
+      const { data, error } = await supabase
         .from('live_comments')
         .insert({
           live_id: liveId,
           user_id: user.id,
           content: commentText
         })
+        .select()
+      
+      if (error) throw error
+      
+      if (data && data[0]) {
+        console.log('💬 Commentaire envoyé avec succès:', {
+          liveId,
+          commentId: data[0].id,
+          content: commentText,
+          userId: user.id,
+          timestamp: data[0].created_at
+        })
+      }
+      
       setCommentText('')
     } catch (error) {
       console.error('Error sending comment:', error)
+      toast.error('Erreur lors de l\'envoi du commentaire')
     }
   }
 
@@ -353,6 +479,9 @@ const LiveStream = () => {
         <StreamStats>
           <Viewers>👁️ {viewers}</Viewers>
           <span>{formatDuration(duration)}</span>
+          {liveData && liveData.title && (
+            <span style={{ fontSize: 12, marginLeft: 8 }}>{liveData.title}</span>
+          )}
         </StreamStats>
       </StreamInfo>
       

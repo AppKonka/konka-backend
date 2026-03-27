@@ -1,5 +1,5 @@
 // src/modules/fan/pages/ArtistPage.jsx
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import styled from 'styled-components'
 import { motion } from 'framer-motion'
@@ -13,6 +13,7 @@ import { usePlayer } from '../../shared/context/PlayerContext'
 import { supabase } from '../../../config/supabase'
 import { formatDistanceToNow } from 'date-fns'
 import { fr } from 'date-fns/locale'
+import { toast } from 'react-hot-toast'
 
 const Container = styled.div`
   min-height: 100vh;
@@ -218,6 +219,14 @@ const MerchPrice = styled.div`
   font-weight: 600;
 `
 
+const LoadingSpinner = styled.div`
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 40px;
+  color: ${props => props.theme.textSecondary};
+`
+
 const ArtistPage = () => {
   const { artistId } = useParams()
   const navigate = useNavigate()
@@ -235,13 +244,9 @@ const ArtistPage = () => {
     plays: 0
   })
   const [loading, setLoading] = useState(true)
+  const [timeAgo, setTimeAgo] = useState('')
 
-  useEffect(() => {
-    loadArtistData()
-    checkFollowStatus()
-  }, [artistId])
-
-  const loadArtistData = async () => {
+  const loadArtistData = useCallback(async () => {
     setLoading(true)
     try {
       // Charger les infos de l'artiste
@@ -256,6 +261,11 @@ const ArtistPage = () => {
       
       if (artistError) throw artistError
       setArtist(artistData)
+      
+      // Calculer le temps depuis la création du compte de l'artiste
+      if (artistData.created_at) {
+        setTimeAgo(formatDistanceToNow(new Date(artistData.created_at), { addSuffix: true, locale: fr }))
+      }
       
       // Charger les morceaux
       const { data: tracksData } = await supabase
@@ -299,14 +309,21 @@ const ArtistPage = () => {
         plays: tracksData?.reduce((sum, t) => sum + (t.play_count || 0), 0) || 0
       })
       
+      console.log('🎤 Artiste chargé:', {
+        artistId,
+        name: artistData?.display_name,
+        followers: followersCount,
+        tracks: tracksData?.length
+      })
     } catch (error) {
       console.error('Error loading artist:', error)
+      toast.error('Erreur lors du chargement de l\'artiste')
     } finally {
       setLoading(false)
     }
-  }
+  }, [artistId])
 
-  const checkFollowStatus = async () => {
+  const checkFollowStatus = useCallback(async () => {
     if (!user) return
     
     try {
@@ -318,10 +335,17 @@ const ArtistPage = () => {
       
       if (error) throw error
       setIsFollowing(data && data.length > 0)
+      
+      console.log('👥 Statut abonnement:', data?.length > 0)
     } catch (error) {
       console.error('Error checking follow status:', error)
     }
-  }
+  }, [user, artistId])
+
+  useEffect(() => {
+    loadArtistData()
+    checkFollowStatus()
+  }, [loadArtistData, checkFollowStatus])
 
   const handleFollow = async () => {
     if (!user) {
@@ -331,34 +355,55 @@ const ArtistPage = () => {
     
     try {
       if (isFollowing) {
-        await supabase
+        const { error } = await supabase
           .from('follows')
           .delete()
           .eq('follower_id', user.id)
           .eq('following_id', artistId)
+        
+        if (error) throw error
         setIsFollowing(false)
         setStats(prev => ({ ...prev, followers: prev.followers - 1 }))
+        toast.success(`Vous ne suivez plus @${artist.username}`)
+        console.log('👥 Désabonnement réussi:', artistId)
       } else {
-        await supabase
+        const { data, error } = await supabase
           .from('follows')
           .insert({
             follower_id: user.id,
-            following_id: artistId
+            following_id: artistId,
+            created_at: new Date().toISOString()
           })
+          .select()
+        
+        if (error) throw error
         setIsFollowing(true)
         setStats(prev => ({ ...prev, followers: prev.followers + 1 }))
+        toast.success(`Vous suivez maintenant @${artist.username}`)
+        console.log('👥 Abonnement réussi:', {
+          artistId,
+          followId: data?.[0]?.id
+        })
       }
     } catch (error) {
       console.error('Error toggling follow:', error)
+      toast.error('Erreur lors de l\'opération')
     }
   }
 
   const handlePlayTrack = (track) => {
     playTrack(track)
+    console.log('▶️ Lecture du morceau:', {
+      trackId: track.id,
+      title: track.title,
+      artistId
+    })
   }
 
   const handleAddToQueue = (track) => {
     addToQueue(track)
+    toast.success(`"${track.title}" ajouté à la file d'attente`)
+    console.log('➕ Morceau ajouté à la file:', track.id)
   }
 
   const formatDate = (date) => {
@@ -374,7 +419,10 @@ const ArtistPage = () => {
     return (
       <Container>
         <Header title="Artiste" showBack />
-        <div style={{ textAlign: 'center', padding: 40 }}>Chargement...</div>
+        <LoadingSpinner>
+          <div>Chargement de l'artiste...</div>
+        </LoadingSpinner>
+        <MusicPlayer />
         <BottomNavigation />
       </Container>
     )
@@ -384,7 +432,13 @@ const ArtistPage = () => {
     return (
       <Container>
         <Header title="Artiste" showBack />
-        <div style={{ textAlign: 'center', padding: 40 }}>Artiste non trouvé</div>
+        <div style={{ textAlign: 'center', padding: 40 }}>
+          <div style={{ fontSize: 48, marginBottom: 16 }}>🎤</div>
+          <div>Artiste non trouvé</div>
+          <Button onClick={() => navigate('/fan/music')} style={{ marginTop: 20 }}>
+            Retour à la musique
+          </Button>
+        </div>
         <BottomNavigation />
       </Container>
     )
@@ -426,6 +480,11 @@ const ArtistPage = () => {
           <Name>{artist.artists?.artist_name || artist.display_name}</Name>
           <Username>@{artist.username}</Username>
           {artist.bio && <Bio>{artist.bio}</Bio>}
+          {timeAgo && (
+            <p style={{ fontSize: 12, color: '#888', marginBottom: 8 }}>
+              Membre depuis {timeAgo}
+            </p>
+          )}
         </ProfileInfo>
         
         <StatsContainer>
@@ -448,7 +507,7 @@ const ArtistPage = () => {
         <>
           <SectionTitle>Morceaux populaires</SectionTitle>
           <TrackList>
-            {tracks.slice(0, 5).map((track, index) => (
+            {tracks.slice(0, 5).map((track) => (
               <TrackItem
                 key={track.id}
                 onClick={() => handlePlayTrack(track)}
@@ -482,6 +541,9 @@ const ArtistPage = () => {
               <LiveInfo>
                 <LiveTitle>{live.title}</LiveTitle>
                 <LiveDate>📅 {formatDate(live.scheduled_at)}</LiveDate>
+                {live.price > 0 && (
+                  <LiveDate>💰 {live.price}€</LiveDate>
+                )}
               </LiveInfo>
               <Button size="small" onClick={() => navigate(`/fan/live/${live.id}`)}>
                 Rappeler

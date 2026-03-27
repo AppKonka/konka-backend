@@ -1,5 +1,5 @@
 // src/modules/seller/pages/SellerSettings.jsx
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import styled from 'styled-components'
 import { motion } from 'framer-motion'
@@ -12,17 +12,17 @@ import { useAuth } from '../../shared/context/AuthContext'
 import { supabase } from '../../../config/supabase'
 import { toast } from 'react-hot-toast'
 
-const Container = styled.div`
+const Container = styled(motion.div)`
   min-height: 100vh;
   background: ${props => props.theme.background};
   padding-bottom: 80px;
 `
 
-const Form = styled.form`
+const Form = styled(motion.form)`
   padding: 20px;
 `
 
-const FormGroup = styled.div`
+const FormGroup = styled(motion.div)`
   margin-bottom: 20px;
 `
 
@@ -66,6 +66,36 @@ const Select = styled.select`
   }
 `
 
+const CategoriesContainer = styled.div`
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+`
+
+const CategoryChip = styled(motion.button)`
+  padding: 6px 12px;
+  border-radius: 20px;
+  border: 1px solid ${props => props.selected ? props.theme.primary : props.theme.border};
+  background: ${props => props.selected ? props.theme.primary : props.theme.surface};
+  color: ${props => props.selected ? 'white' : props.theme.text};
+  font-size: 12px;
+  cursor: pointer;
+`
+
+const LoadingSpinner = styled.div`
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 40px;
+  color: ${props => props.theme.textSecondary};
+`
+
+const categoriesList = [
+  'Vêtements', 'Chaussures', 'Accessoires', 'Musique', 'Instruments',
+  'Artisanat', 'Électronique', 'Livres', 'Sports', 'Maison'
+]
+
 const SellerSettings = () => {
   const navigate = useNavigate()
   const { user } = useAuth()
@@ -80,11 +110,7 @@ const SellerSettings = () => {
     phone: ''
   })
 
-  useEffect(() => {
-    loadSellerData()
-  }, [])
-
-  const loadSellerData = async () => {
+  const loadSellerData = useCallback(async () => {
     setLoading(true)
     try {
       const { data, error } = await supabase
@@ -92,6 +118,10 @@ const SellerSettings = () => {
         .select('*')
         .eq('user_id', user.id)
         .single()
+      
+      if (error && error.code !== 'PGRST116') {
+        console.error('Error loading seller data:', error)
+      }
       
       if (data) {
         setFormData({
@@ -102,18 +132,37 @@ const SellerSettings = () => {
           address: data.address || '',
           phone: data.phone || ''
         })
+        console.log('🏪 Données vendeur chargées:', {
+          storeName: data.store_name,
+          storeType: data.store_type,
+          categories: data.categories?.length
+        })
       }
     } catch (error) {
       console.error('Error loading seller data:', error)
+      toast.error('Erreur lors du chargement des données')
     } finally {
       setLoading(false)
     }
-  }
+  }, [user.id])
+
+  useEffect(() => {
+    loadSellerData()
+  }, [loadSellerData])
 
   const handleChange = (e) => {
     setFormData({
       ...formData,
       [e.target.name]: e.target.value
+    })
+  }
+
+  const handleCategoryToggle = (category) => {
+    setFormData(prev => {
+      const newCategories = prev.categories.includes(category)
+        ? prev.categories.filter(c => c !== category)
+        : [...prev.categories, category]
+      return { ...prev, categories: newCategories }
     })
   }
 
@@ -124,19 +173,26 @@ const SellerSettings = () => {
     try {
       const { error } = await supabase
         .from('sellers')
-        .update({
+        .upsert({
+          user_id: user.id,
           store_name: formData.store_name,
           store_description: formData.store_description,
           store_type: formData.store_type,
           categories: formData.categories,
           address: formData.address,
-          phone: formData.phone
+          phone: formData.phone,
+          updated_at: new Date().toISOString()
         })
-        .eq('user_id', user.id)
+        .select()
       
       if (error) throw error
       
-      toast.success('Paramètres mis à jour')
+      toast.success('Paramètres mis à jour avec succès')
+      console.log('✅ Paramètres vendeur sauvegardés:', {
+        storeName: formData.store_name,
+        storeType: formData.store_type,
+        categories: formData.categories.length
+      })
       navigate('/seller/dashboard')
     } catch (error) {
       console.error('Error saving settings:', error)
@@ -146,28 +202,54 @@ const SellerSettings = () => {
     }
   }
 
+  const getStoreTypeLabel = (type) => {
+    switch (type) {
+      case 'individual': return 'Particulier'
+      case 'professional': return 'Professionnel'
+      case 'artisan': return 'Artisan'
+      default: return 'Particulier'
+    }
+  }
+
   if (loading) {
     return (
-      <Container>
-        <Header title="Paramètres" showBack />
-        <div style={{ textAlign: 'center', padding: 40 }}>Chargement...</div>
+      <Container
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ duration: 0.3 }}
+      >
+        <Header title="Paramètres boutique" showBack />
+        <LoadingSpinner>
+          <div>Chargement de votre boutique...</div>
+        </LoadingSpinner>
+        <MusicPlayer />
         <BottomNavigation />
       </Container>
     )
   }
 
   return (
-    <Container>
-      <Header title="Paramètres" showBack />
+    <Container
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ duration: 0.3 }}
+    >
+      <Header title="Paramètres boutique" showBack />
       
-      <Form onSubmit={handleSubmit}>
+      <Form
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.5 }}
+        onSubmit={handleSubmit}
+      >
         <FormGroup>
-          <Label>Nom de la boutique</Label>
+          <Label>Nom de la boutique *</Label>
           <Input
             name="store_name"
             value={formData.store_name}
             onChange={handleChange}
             placeholder="Nom de votre boutique"
+            required
           />
         </FormGroup>
         
@@ -177,8 +259,11 @@ const SellerSettings = () => {
             name="store_description"
             value={formData.store_description}
             onChange={handleChange}
-            placeholder="Décrivez votre boutique..."
+            placeholder="Décrivez votre boutique, vos produits, votre histoire..."
           />
+          <div style={{ fontSize: 12, color: '#888', marginTop: 4 }}>
+            {formData.store_description.length}/500 caractères
+          </div>
         </FormGroup>
         
         <FormGroup>
@@ -192,6 +277,28 @@ const SellerSettings = () => {
             <option value="professional">Professionnel</option>
             <option value="artisan">Artisan</option>
           </Select>
+          <p style={{ fontSize: 12, color: '#888', marginTop: 4 }}>
+            Type actuel: {getStoreTypeLabel(formData.store_type)}
+          </p>
+        </FormGroup>
+        
+        <FormGroup>
+          <Label>Catégories de produits</Label>
+          <CategoriesContainer>
+            {categoriesList.map(cat => (
+              <CategoryChip
+                key={cat}
+                selected={formData.categories.includes(cat)}
+                onClick={() => handleCategoryToggle(cat)}
+                whileTap={{ scale: 0.95 }}
+              >
+                {cat}
+              </CategoryChip>
+            ))}
+          </CategoriesContainer>
+          <p style={{ fontSize: 12, color: '#888', marginTop: 8 }}>
+            {formData.categories.length} catégorie(s) sélectionnée(s)
+          </p>
         </FormGroup>
         
         <FormGroup>
@@ -200,7 +307,7 @@ const SellerSettings = () => {
             name="address"
             value={formData.address}
             onChange={handleChange}
-            placeholder="Adresse de la boutique"
+            placeholder="Adresse complète de votre boutique"
           />
         </FormGroup>
         
@@ -211,11 +318,17 @@ const SellerSettings = () => {
             value={formData.phone}
             onChange={handleChange}
             placeholder="Numéro de téléphone"
+            type="tel"
           />
         </FormGroup>
         
-        <Button type="submit" fullWidth loading={saving}>
-          Enregistrer
+        <Button
+          type="submit"
+          fullWidth
+          loading={saving}
+          whileTap={{ scale: 0.98 }}
+        >
+          {saving ? 'Enregistrement...' : 'Enregistrer les modifications'}
         </Button>
       </Form>
       

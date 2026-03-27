@@ -1,5 +1,5 @@
 // src/modules/admin/pages/ContentModeration.jsx
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import styled from 'styled-components'
 import { motion, AnimatePresence } from 'framer-motion'
 import { 
@@ -181,16 +181,43 @@ const EmptyState = styled.div`
   }
 `
 
+const StatsBar = styled.div`
+  display: flex;
+  gap: 16px;
+  margin-bottom: 24px;
+  padding: 16px;
+  background: ${props => props.theme.surface};
+  border-radius: 12px;
+  justify-content: space-around;
+`
+
+const StatItem = styled.div`
+  text-align: center;
+`
+
+const StatValue = styled.div`
+  font-size: 24px;
+  font-weight: 700;
+  color: ${props => props.theme.primary};
+`
+
+const StatLabel = styled.div`
+  font-size: 12px;
+  color: ${props => props.theme.textSecondary};
+`
+
 const ContentModeration = () => {
   const [activeTab, setActiveTab] = useState('pending')
   const [contents, setContents] = useState([])
   const [loading, setLoading] = useState(true)
+  const [stats, setStats] = useState({
+    pending: 0,
+    approved: 0,
+    rejected: 0,
+    total: 0
+  })
 
-  useEffect(() => {
-    loadContents()
-  }, [activeTab])
-
-  const loadContents = async () => {
+  const loadContents = useCallback(async () => {
     setLoading(true)
     try {
       let query = supabase
@@ -209,24 +236,64 @@ const ContentModeration = () => {
       
       if (error) throw error
       setContents(data || [])
+      
+      // Calculer les statistiques globales
+      const { data: allContents } = await supabase
+        .from('reported_content')
+        .select('status')
+      
+      const pending = allContents?.filter(c => c.status === 'pending').length || 0
+      const approved = allContents?.filter(c => c.status === 'approved').length || 0
+      const rejected = allContents?.filter(c => c.status === 'rejected').length || 0
+      
+      setStats({
+        pending,
+        approved,
+        rejected,
+        total: allContents?.length || 0
+      })
+      
+      console.log('📋 Contenus chargés:', {
+        activeTab,
+        count: data?.length,
+        pending,
+        approved,
+        rejected
+      })
     } catch (error) {
       console.error('Error loading contents:', error)
+      toast.error('Erreur lors du chargement des contenus')
     } finally {
       setLoading(false)
     }
-  }
+  }, [activeTab])
+
+  useEffect(() => {
+    loadContents()
+  }, [loadContents])
 
   const handleModerate = async (contentId, action) => {
     try {
-      await supabase
+      const { data, error } = await supabase
         .from('reported_content')
         .update({ 
           status: action,
-          moderated_at: new Date().toISOString()
+          moderated_at: new Date().toISOString(),
+          moderated_by: 'admin'
         })
         .eq('id', contentId)
+        .select()
       
-      toast.success(`Contenu ${action === 'approved' ? 'approuvé' : 'rejeté'}`)
+      if (error) throw error
+      
+      toast.success(`Contenu ${action === 'approved' ? 'approuvé' : 'rejeté'} avec succès`)
+      console.log('🔨 Contenu modéré:', {
+        contentId,
+        action,
+        moderatedAt: new Date().toISOString(),
+        data
+      })
+      
       loadContents()
     } catch (error) {
       console.error('Error moderating content:', error)
@@ -269,27 +336,46 @@ const ContentModeration = () => {
         <Subtitle>Examinez et modérez le contenu signalé par les utilisateurs</Subtitle>
       </Header>
       
+      <StatsBar>
+        <StatItem>
+          <StatValue>{stats.pending}</StatValue>
+          <StatLabel>En attente</StatLabel>
+        </StatItem>
+        <StatItem>
+          <StatValue>{stats.approved}</StatValue>
+          <StatLabel>Approuvés</StatLabel>
+        </StatItem>
+        <StatItem>
+          <StatValue>{stats.rejected}</StatValue>
+          <StatLabel>Rejetés</StatLabel>
+        </StatItem>
+        <StatItem>
+          <StatValue>{stats.total}</StatValue>
+          <StatLabel>Total</StatLabel>
+        </StatItem>
+      </StatsBar>
+      
       <Tabs>
         <Tab
           active={activeTab === 'pending'}
           onClick={() => setActiveTab('pending')}
           whileTap={{ scale: 0.95 }}
         >
-          En attente ({contents.filter(c => c.status === 'pending').length})
+          En attente ({stats.pending})
         </Tab>
         <Tab
           active={activeTab === 'approved'}
           onClick={() => setActiveTab('approved')}
           whileTap={{ scale: 0.95 }}
         >
-          Approuvés
+          Approuvés ({stats.approved})
         </Tab>
         <Tab
           active={activeTab === 'rejected'}
           onClick={() => setActiveTab('rejected')}
           whileTap={{ scale: 0.95 }}
         >
-          Rejetés
+          Rejetés ({stats.rejected})
         </Tab>
       </Tabs>
       
@@ -297,6 +383,11 @@ const ContentModeration = () => {
         <EmptyState>
           <div className="icon">✅</div>
           <div>Aucun contenu à modérer</div>
+          {activeTab === 'pending' && (
+            <div style={{ fontSize: 13, marginTop: 8 }}>
+              Tous les contenus signalés ont été traités
+            </div>
+          )}
         </EmptyState>
       ) : (
         <ContentGrid>
@@ -348,7 +439,7 @@ const ContentModeration = () => {
                 )}
                 
                 <ReportCount>
-                  <Flag size={12} /> {content.reports?.[0]?.count || 0} signalements
+                  <Flag size={12} /> {content.reports?.[0]?.count || 0} signalement(s)
                 </ReportCount>
                 
                 {activeTab === 'pending' && (
@@ -363,7 +454,8 @@ const ContentModeration = () => {
                 )}
                 
                 {activeTab !== 'pending' && (
-                  <div style={{ fontSize: 13, color: '#888', textAlign: 'center' }}>
+                  <div style={{ fontSize: 13, color: '#888', textAlign: 'center', marginTop: 8 }}>
+                    <Eye size={12} style={{ display: 'inline', marginRight: 4 }} />
                     Modéré le {new Date(content.moderated_at).toLocaleDateString()}
                   </div>
                 )}

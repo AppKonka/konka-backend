@@ -1,5 +1,5 @@
 // src/modules/admin/pages/UserManagement.jsx
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import styled from 'styled-components'
 import { motion } from 'framer-motion'
@@ -215,6 +215,25 @@ const ActionItem = styled.button`
   }
 `
 
+const LoadingSpinner = styled.div`
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 40px;
+  color: ${props => props.theme.textSecondary};
+`
+
+const EmptyState = styled.div`
+  text-align: center;
+  padding: 60px 20px;
+  color: ${props => props.theme.textSecondary};
+  
+  .icon {
+    font-size: 48px;
+    margin-bottom: 16px;
+  }
+`
+
 const UserManagement = () => {
   const navigate = useNavigate()
   const [users, setUsers] = useState([])
@@ -230,11 +249,7 @@ const UserManagement = () => {
   
   const itemsPerPage = 20
 
-  useEffect(() => {
-    loadUsers()
-  }, [searchQuery, roleFilter, statusFilter, sortBy, sortOrder, currentPage])
-
-  const loadUsers = async () => {
+  const loadUsers = useCallback(async () => {
     setLoading(true)
     try {
       let query = supabase
@@ -272,13 +287,24 @@ const UserManagement = () => {
       
       setUsers(data || [])
       setTotalPages(Math.ceil((count || 0) / itemsPerPage))
+      
+      console.log('👥 Utilisateurs chargés:', {
+        count: data?.length,
+        total: count,
+        page: currentPage,
+        filters: { searchQuery, roleFilter, statusFilter }
+      })
     } catch (error) {
       console.error('Error loading users:', error)
       toast.error('Erreur lors du chargement des utilisateurs')
     } finally {
       setLoading(false)
     }
-  }
+  }, [searchQuery, roleFilter, statusFilter, sortBy, sortOrder, currentPage, itemsPerPage])
+
+  useEffect(() => {
+    loadUsers()
+  }, [loadUsers])
 
   const handleSort = (column) => {
     if (sortBy === column) {
@@ -291,7 +317,7 @@ const UserManagement = () => {
 
   const handleBlockUser = async (userId, currentStatus) => {
     try {
-      await supabase
+      const { error } = await supabase
         .from('users')
         .update({ 
           is_blocked: !currentStatus,
@@ -299,7 +325,10 @@ const UserManagement = () => {
         })
         .eq('id', userId)
       
+      if (error) throw error
+      
       toast.success(`Utilisateur ${!currentStatus ? 'bloqué' : 'débloqué'} avec succès`)
+      console.log(`🔒 Utilisateur ${!currentStatus ? 'bloqué' : 'débloqué'}:`, userId)
       loadUsers()
     } catch (error) {
       console.error('Error blocking user:', error)
@@ -310,12 +339,15 @@ const UserManagement = () => {
   const handleDeleteUser = async (userId) => {
     if (window.confirm('Êtes-vous sûr de vouloir supprimer définitivement cet utilisateur ? Cette action est irréversible.')) {
       try {
-        await supabase
+        const { error } = await supabase
           .from('users')
           .delete()
           .eq('id', userId)
         
+        if (error) throw error
+        
         toast.success('Utilisateur supprimé avec succès')
+        console.log('🗑️ Utilisateur supprimé:', userId)
         loadUsers()
       } catch (error) {
         console.error('Error deleting user:', error)
@@ -326,17 +358,25 @@ const UserManagement = () => {
 
   const handleMakeAdmin = async (userId) => {
     try {
-      await supabase
+      const { error } = await supabase
         .from('users')
         .update({ role: 'admin' })
         .eq('id', userId)
       
+      if (error) throw error
+      
       toast.success('Utilisateur promu administrateur')
+      console.log('👑 Utilisateur promu admin:', userId)
       loadUsers()
     } catch (error) {
       console.error('Error making admin:', error)
       toast.error('Erreur lors de la promotion')
     }
+  }
+
+  const handleViewDetails = (userId) => {
+    navigate(`/admin/users/${userId}`)
+    console.log('👁️ Consultation des détails utilisateur:', userId)
   }
 
   const formatDate = (date) => {
@@ -365,6 +405,19 @@ const UserManagement = () => {
       case 'admin': return 'Admin'
       default: return role
     }
+  }
+
+  if (loading && users.length === 0) {
+    return (
+      <Container>
+        <Header>
+          <Title>Gestion des utilisateurs</Title>
+        </Header>
+        <LoadingSpinner>
+          <div>Chargement des utilisateurs...</div>
+        </LoadingSpinner>
+      </Container>
+    )
   }
 
   return (
@@ -445,10 +498,19 @@ const UserManagement = () => {
           </tr>
         </thead>
         <tbody>
-          {loading ? (
-            <tr><td colSpan="6" style={{ textAlign: 'center', padding: 40 }}>Chargement...</td></tr>
-          ) : users.length === 0 ? (
-            <tr><td colSpan="6" style={{ textAlign: 'center', padding: 40 }}>Aucun utilisateur trouvé</td></tr>
+          {users.length === 0 ? (
+            <tr>
+              <td colSpan="6">
+                <EmptyState>
+                  <div className="icon">👥</div>
+                  <div>Aucun utilisateur trouvé</div>
+                  <div style={{ fontSize: 13, marginTop: 8 }}>
+                    {searchQuery && "Essayez une autre recherche"}
+                    {!searchQuery && "Aucun utilisateur ne correspond aux filtres"}
+                  </div>
+                </EmptyState>
+              </td>
+            </tr>
           ) : (
             users.map(user => (
               <tr key={user.id}>
@@ -496,7 +558,7 @@ const UserManagement = () => {
                         animate={{ opacity: 1, scale: 1 }}
                         exit={{ opacity: 0, scale: 0.9 }}
                       >
-                        <ActionItem onClick={() => navigate(`/admin/users/${user.id}`)}>
+                        <ActionItem onClick={() => handleViewDetails(user.id)}>
                           <UserCheck size={16} /> Voir détails
                         </ActionItem>
                         <ActionItem onClick={() => handleBlockUser(user.id, user.is_blocked)}>

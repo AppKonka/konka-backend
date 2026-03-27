@@ -1,5 +1,5 @@
 // src/modules/fan/components/Shopping/VoiceSearch.jsx
-import React, { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect, useRef, useCallback } from 'react'
 import styled from 'styled-components'
 import { motion, AnimatePresence } from 'framer-motion'
 
@@ -70,6 +70,56 @@ const VoiceSearch = ({ onResult, onClose }) => {
   const [isProcessing, setIsProcessing] = useState(false)
   const recognitionRef = useRef(null)
 
+  const extractKeywords = useCallback((text) => {
+    const categories = {
+      clothing: ['vêtement', 'tee-shirt', 'pantalon', 'jean', 'robe', 'chemise', 'pull', 'veste', 'manteau'],
+      shoes: ['chaussure', 'basket', 'sandale', 'botte', 'talon', 'escarpin'],
+      music: ['disque', 'vinyle', 'album', 'cd', 'morceau', 'musique'],
+      instruments: ['guitare', 'piano', 'batterie', 'violon', 'saxophone', 'trompette'],
+      electronics: ['téléphone', 'casque', 'enceinte', 'ordinateur', 'tablette'],
+      accessories: ['accessoire', 'sac', 'montre', 'bijou', 'ceinture', 'chapeau']
+    }
+    
+    const lowerText = text.toLowerCase()
+    let category = null
+    
+    for (const [cat, keywords] of Object.entries(categories)) {
+      if (keywords.some(k => lowerText.includes(k))) {
+        category = cat
+        break
+      }
+    }
+    
+    return {
+      original: text,
+      category,
+      keywords: text.split(' ').filter(w => w.length > 2)
+    }
+  }, [])
+
+  const processVoiceInput = useCallback(async (text) => {
+    setIsProcessing(true)
+    
+    try {
+      // Analyser le texte pour extraire les mots-clés
+      const keywords = extractKeywords(text)
+      onResult?.(keywords, text)
+      
+      setTranscript(`Recherche: "${text}"`)
+      setTimeout(() => onClose(), 1500)
+    } catch (error) {
+      console.error('Error processing voice input:', error)
+      setTranscript('Erreur lors du traitement')
+      setTimeout(() => onClose(), 1500)
+    } finally {
+      setIsProcessing(false)
+    }
+  }, [extractKeywords, onResult, onClose])
+
+  const handleClose = useCallback(() => {
+    onClose()
+  }, [onClose])
+
   useEffect(() => {
     // Initialiser la reconnaissance vocale
     if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
@@ -97,67 +147,21 @@ const VoiceSearch = ({ onResult, onClose }) => {
       recognitionRef.current.onerror = () => {
         setIsListening(false)
         setTranscript('Erreur de reconnaissance')
-        setTimeout(() => onClose(), 1500)
+        setTimeout(() => handleClose(), 1500)
       }
       
       recognitionRef.current.onend = () => {
         setIsListening(false)
       }
     }
-  }, [])
+  }, [processVoiceInput, handleClose])
 
   const startListening = () => {
     if (recognitionRef.current) {
       recognitionRef.current.start()
     } else {
       setTranscript('Reconnaissance vocale non supportée')
-      setTimeout(() => onClose(), 1500)
-    }
-  }
-
-  const processVoiceInput = async (text) => {
-    setIsProcessing(true)
-    
-    try {
-      // Analyser le texte pour extraire les mots-clés
-      const keywords = extractKeywords(text)
-      onResult?.(keywords, text)
-      
-      setTranscript(`Recherche: "${text}"`)
-      setTimeout(() => onClose(), 1500)
-    } catch (error) {
-      console.error('Error processing voice input:', error)
-      setTranscript('Erreur lors du traitement')
-      setTimeout(() => onClose(), 1500)
-    } finally {
-      setIsProcessing(false)
-    }
-  }
-
-  const extractKeywords = (text) => {
-    const categories = {
-      clothing: ['vêtement', 'tee-shirt', 'pantalon', 'jean', 'robe', 'chemise', 'pull', 'veste', 'manteau'],
-      shoes: ['chaussure', 'basket', 'sandale', 'botte', 'talon', 'escarpin'],
-      music: ['disque', 'vinyle', 'album', 'cd', 'morceau', 'musique'],
-      instruments: ['guitare', 'piano', 'batterie', 'violon', 'saxophone', 'trompette'],
-      electronics: ['téléphone', 'casque', 'enceinte', 'ordinateur', 'tablette'],
-      accessories: ['accessoire', 'sac', 'montre', 'bijou', 'ceinture', 'chapeau']
-    }
-    
-    const lowerText = text.toLowerCase()
-    let category = null
-    
-    for (const [cat, keywords] of Object.entries(categories)) {
-      if (keywords.some(k => lowerText.includes(k))) {
-        category = cat
-        break
-      }
-    }
-    
-    return {
-      original: text,
-      category,
-      keywords: text.split(' ').filter(w => w.length > 2)
+      setTimeout(() => handleClose(), 1500)
     }
   }
 
@@ -167,7 +171,7 @@ const VoiceSearch = ({ onResult, onClose }) => {
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
     >
-      <CloseButton onClick={onClose} whileTap={{ scale: 0.9 }}>
+      <CloseButton onClick={handleClose} whileTap={{ scale: 0.9 }}>
         ✕
       </CloseButton>
       

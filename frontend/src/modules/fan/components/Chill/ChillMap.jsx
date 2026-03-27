@@ -1,5 +1,5 @@
 // src/modules/fan/components/Chill/ChillMap.jsx
-import React, { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect, useRef, useCallback } from 'react'
 import styled from 'styled-components'
 import { motion } from 'framer-motion'
 import { Avatar } from '../../../shared/components/ui/Avatar'
@@ -113,59 +113,83 @@ const PopupButton = styled.button`
 `
 
 export const ChillMap = ({ events, onEventSelect, onLocationChange }) => {
-  const [map, setMap] = useState(null)
+  const [mapInstance, setMapInstance] = useState(null)
   const [markers, setMarkers] = useState([])
-  const [userMarker, setUserMarker] = useState(null)
   const [userLocation, setUserLocation] = useState(null)
   const [selectedEvent, setSelectedEvent] = useState(null)
   const mapRef = useRef(null)
   const mapInstanceRef = useRef(null)
+
+  // Fonction pour centrer sur l'utilisateur
+  const centerOnUser = useCallback(() => {
+    if (mapInstanceRef.current && userLocation) {
+      mapInstanceRef.current.setView([userLocation.lat, userLocation.lng], 14)
+      console.log('📍 Centrage sur la position utilisateur:', userLocation)
+    }
+  }, [userLocation])
+
+  // Fonction pour gérer la position de l'utilisateur
+  const handleUserLocation = useCallback((position) => {
+    const { latitude, longitude } = position.coords
+    const pos = { lat: latitude, lng: longitude }
+    setUserLocation(pos)
+    
+    if (mapInstanceRef.current) {
+      mapInstanceRef.current.setView([latitude, longitude], 13)
+    }
+    
+    onLocationChange?.(pos)
+    
+    // Ajouter un marqueur pour l'utilisateur
+    L.marker([latitude, longitude], { icon: userIcon })
+      .addTo(mapInstanceRef.current)
+      .bindPopup('<strong>Vous êtes ici</strong>')
+      .openPopup()
+    
+    console.log('📍 Position utilisateur enregistrée:', pos)
+  }, [onLocationChange])
 
   // Initialisation de la carte
   useEffect(() => {
     if (!mapRef.current) return
 
     // Créer la carte OpenStreetMap
-    const mapInstance = L.map(mapRef.current).setView([48.8566, 2.3522], 12)
-    mapInstanceRef.current = mapInstance
+    const map = L.map(mapRef.current).setView([48.8566, 2.3522], 12)
+    mapInstanceRef.current = map
+    setMapInstance(map)
 
     // Ajouter le fond de carte OpenStreetMap
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
       maxZoom: 19,
-    }).addTo(mapInstance)
-
-    setMap(mapInstance)
+    }).addTo(map)
 
     // Obtenir la position de l'utilisateur
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
-        (position) => {
-          const { latitude, longitude } = position.coords
-          const pos = { lat: latitude, lng: longitude }
-          setUserLocation(pos)
-          mapInstance.setView([latitude, longitude], 13)
-          onLocationChange?.(pos)
-
-          // Ajouter un marqueur pour l'utilisateur
-          const marker = L.marker([latitude, longitude], { icon: userIcon })
-            .addTo(mapInstance)
-            .bindPopup('<strong>Vous êtes ici</strong>')
-            .openPopup()
-          setUserMarker(marker)
-        },
+        handleUserLocation,
         (error) => {
           console.error('Erreur de géolocalisation:', error.message)
+          // Position par défaut (Paris)
+          const defaultPos = { lat: 48.8566, lng: 2.3522 }
+          setUserLocation(defaultPos)
+          map.setView([48.8566, 2.3522], 12)
+          onLocationChange?.(defaultPos)
         }
       )
+    } else {
+      console.warn('Géolocalisation non supportée')
+      const defaultPos = { lat: 48.8566, lng: 2.3522 }
+      setUserLocation(defaultPos)
+      onLocationChange?.(defaultPos)
     }
 
     return () => {
-      if (mapInstance) {
-        mapInstance.remove()
+      if (map) {
+        map.remove()
       }
     }
-  }, [])
+  }, [handleUserLocation, onLocationChange])
 
   // Gestion des marqueurs d'événements
   useEffect(() => {
@@ -189,19 +213,25 @@ export const ChillMap = ({ events, onEventSelect, onLocationChange }) => {
       marker.on('click', () => {
         setSelectedEvent(event)
         onEventSelect?.(event)
+        console.log('📍 Marqueur cliqué:', event.name)
       })
       
       return marker
     })
     
     setMarkers(newMarkers)
-  }, [events, map])
-
-  const centerOnUser = () => {
-    if (mapInstanceRef.current && userLocation) {
-      mapInstanceRef.current.setView([userLocation.lat, userLocation.lng], 14)
+    
+    // Si un seul événement, centrer dessus
+    if (mapInstance && newMarkers.length > 0 && events.length === 1) {
+      const event = events[0]
+      mapInstance.setView([event.location_lat, event.location_lng], 13)
     }
-  }
+    
+    // Log du nombre de marqueurs ajoutés
+    console.log(`🗺️ ${newMarkers.length} marqueurs ajoutés sur la carte`)
+    
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [events, onEventSelect, mapInstance])
 
   const closePopup = () => {
     setSelectedEvent(null)
@@ -231,6 +261,9 @@ export const ChillMap = ({ events, onEventSelect, onLocationChange }) => {
               <PopupAddress>📍 {selectedEvent.location_name}</PopupAddress>
               {selectedEvent.event_date && (
                 <PopupAddress>📅 {new Date(selectedEvent.event_date).toLocaleDateString('fr-FR')}</PopupAddress>
+              )}
+              {selectedEvent.participant_count > 0 && (
+                <PopupAddress>👥 {selectedEvent.participant_count} participant(s)</PopupAddress>
               )}
               <PopupButton onClick={() => {
                 onEventSelect?.(selectedEvent)

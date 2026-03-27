@@ -1,5 +1,5 @@
 // src/modules/fan/pages/PlaylistDetail.jsx
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import styled from 'styled-components'
 import { motion } from 'framer-motion'
@@ -10,7 +10,9 @@ import { Button } from '../../shared/components/ui/Button'
 import { MusicPlayer } from '../../shared/components/layout/MusicPlayer'
 import { useAuth } from '../../shared/context/AuthContext'
 import { usePlayer } from '../../shared/context/PlayerContext'
+import { useTheme } from '../../shared/context/ThemeContext'
 import { supabase } from '../../../config/supabase'
+import { toast } from 'react-hot-toast'
 
 const Container = styled.div`
   min-height: 100vh;
@@ -67,6 +69,53 @@ const ActionButtons = styled.div`
   display: flex;
   gap: 12px;
   margin-bottom: 24px;
+`
+
+const NowPlayingBar = styled.div`
+  background: ${props => props.theme.surface};
+  border-radius: 12px;
+  padding: 12px 16px;
+  margin: 0 16px 20px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  cursor: pointer;
+  box-shadow: ${props => props.theme.shadow.sm};
+  
+  &:hover {
+    background: ${props => props.theme.border};
+  }
+`
+
+const NowPlayingCover = styled.img`
+  width: 48px;
+  height: 48px;
+  border-radius: 8px;
+  object-fit: cover;
+`
+
+const NowPlayingInfo = styled.div`
+  flex: 1;
+`
+
+const NowPlayingTitle = styled.div`
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 2px;
+  color: ${props => props.theme.text};
+`
+
+const NowPlayingArtist = styled.div`
+  font-size: 12px;
+  color: ${props => props.theme.textSecondary};
+`
+
+const NowPlayingControl = styled(motion.button)`
+  background: none;
+  border: none;
+  font-size: 24px;
+  cursor: pointer;
+  color: ${props => props.theme.primary};
 `
 
 const TrackList = styled.div`
@@ -143,11 +192,20 @@ const EmptyState = styled.div`
   }
 `
 
+const LoadingSpinner = styled.div`
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 40px;
+  color: ${props => props.theme.textSecondary};
+`
+
 const PlaylistDetail = () => {
   const { playlistId } = useParams()
   const navigate = useNavigate()
   const { user } = useAuth()
-  const { playTrack, addPlaylistToQueue, clearQueue, isPlaying, pauseTrack, resumeTrack } = usePlayer()
+  const { playTrack, addPlaylistToQueue, clearQueue, currentTrack, isPlaying, pauseTrack, resumeTrack } = usePlayer()
+  const { theme } = useTheme()
   
   const [playlist, setPlaylist] = useState(null)
   const [tracks, setTracks] = useState([])
@@ -155,13 +213,7 @@ const PlaylistDetail = () => {
   const [isLiked, setIsLiked] = useState(false)
   const [loading, setLoading] = useState(true)
 
-  useEffect(() => {
-    loadPlaylist()
-    checkFollowStatus()
-    checkLikeStatus()
-  }, [playlistId])
-
-  const loadPlaylist = async () => {
+  const loadPlaylist = useCallback(async () => {
     setLoading(true)
     try {
       // Charger la playlist
@@ -192,14 +244,20 @@ const PlaylistDetail = () => {
       
       setTracks(tracksData?.map(pt => pt.track) || [])
       
+      console.log('📀 Playlist chargée:', {
+        playlistId,
+        name: playlistData?.name,
+        tracksCount: tracksData?.length
+      })
     } catch (error) {
       console.error('Error loading playlist:', error)
+      toast.error('Erreur lors du chargement de la playlist')
     } finally {
       setLoading(false)
     }
-  }
+  }, [playlistId])
 
-  const checkFollowStatus = async () => {
+  const checkFollowStatus = useCallback(async () => {
     if (!user || !playlist) return
     
     try {
@@ -211,12 +269,14 @@ const PlaylistDetail = () => {
       
       if (error) throw error
       setIsFollowing(data && data.length > 0)
+      
+      console.log('👥 Statut abonnement playlist:', data?.length > 0)
     } catch (error) {
       console.error('Error checking follow status:', error)
     }
-  }
+  }, [user, playlistId, playlist])
 
-  const checkLikeStatus = async () => {
+  const checkLikeStatus = useCallback(async () => {
     if (!user) return
     
     try {
@@ -228,10 +288,18 @@ const PlaylistDetail = () => {
       
       if (error) throw error
       setIsLiked(data && data.length > 0)
+      
+      console.log('❤️ Statut like playlist:', data?.length > 0)
     } catch (error) {
       console.error('Error checking like status:', error)
     }
-  }
+  }, [user, playlistId])
+
+  useEffect(() => {
+    loadPlaylist()
+    checkFollowStatus()
+    checkLikeStatus()
+  }, [loadPlaylist, checkFollowStatus, checkLikeStatus])
 
   const handleFollow = async () => {
     if (!user) {
@@ -241,25 +309,39 @@ const PlaylistDetail = () => {
     
     try {
       if (isFollowing) {
-        await supabase
+        const { error } = await supabase
           .from('playlist_follows')
           .delete()
           .eq('user_id', user.id)
           .eq('playlist_id', playlistId)
+        
+        if (error) throw error
         setIsFollowing(false)
-        setPlaylist(prev => ({ ...prev, follower_count: prev.follower_count - 1 }))
+        setPlaylist(prev => ({ ...prev, follower_count: (prev?.follower_count || 0) - 1 }))
+        toast.success(`Vous ne suivez plus la playlist "${playlist?.name}"`)
+        console.log('👥 Désabonnement playlist réussi:', playlistId)
       } else {
-        await supabase
+        const { data, error } = await supabase
           .from('playlist_follows')
           .insert({
             user_id: user.id,
-            playlist_id: playlistId
+            playlist_id: playlistId,
+            created_at: new Date().toISOString()
           })
+          .select()
+        
+        if (error) throw error
         setIsFollowing(true)
-        setPlaylist(prev => ({ ...prev, follower_count: prev.follower_count + 1 }))
+        setPlaylist(prev => ({ ...prev, follower_count: (prev?.follower_count || 0) + 1 }))
+        toast.success(`Vous suivez maintenant la playlist "${playlist?.name}"`)
+        console.log('👥 Abonnement playlist réussi:', {
+          playlistId,
+          followId: data?.[0]?.id
+        })
       }
     } catch (error) {
       console.error('Error toggling follow:', error)
+      toast.error('Erreur lors de l\'opération')
     }
   }
 
@@ -271,36 +353,76 @@ const PlaylistDetail = () => {
     
     try {
       if (isLiked) {
-        await supabase
+        const { error } = await supabase
           .from('playlist_likes')
           .delete()
           .eq('user_id', user.id)
           .eq('playlist_id', playlistId)
+        
+        if (error) throw error
         setIsLiked(false)
-        setPlaylist(prev => ({ ...prev, like_count: prev.like_count - 1 }))
+        setPlaylist(prev => ({ ...prev, like_count: (prev?.like_count || 0) - 1 }))
+        toast.success(`Playlist retirée des favoris`)
+        console.log('❤️ Like retiré de la playlist:', playlistId)
       } else {
-        await supabase
+        const { data, error } = await supabase
           .from('playlist_likes')
           .insert({
             user_id: user.id,
-            playlist_id: playlistId
+            playlist_id: playlistId,
+            created_at: new Date().toISOString()
           })
+          .select()
+        
+        if (error) throw error
         setIsLiked(true)
-        setPlaylist(prev => ({ ...prev, like_count: prev.like_count + 1 }))
+        setPlaylist(prev => ({ ...prev, like_count: (prev?.like_count || 0) + 1 }))
+        toast.success(`Playlist ajoutée aux favoris`)
+        console.log('❤️ Like ajouté à la playlist:', {
+          playlistId,
+          likeId: data?.[0]?.id
+        })
       }
     } catch (error) {
       console.error('Error toggling like:', error)
+      toast.error('Erreur lors de l\'opération')
     }
   }
 
   const handlePlayAll = () => {
+    if (tracks.length === 0) {
+      toast.error('Aucun morceau dans cette playlist')
+      return
+    }
+    
     clearQueue()
     addPlaylistToQueue(tracks)
     playTrack(tracks[0])
+    
+    console.log('▶️ Lecture complète de la playlist:', {
+      playlistId,
+      name: playlist?.name,
+      tracksCount: tracks.length
+    })
   }
 
   const handlePlayTrack = (track) => {
     playTrack(track)
+    console.log('▶️ Lecture du morceau:', {
+      trackId: track.id,
+      title: track.title,
+      playlistId
+    })
+  }
+
+  const handleTogglePlayback = () => {
+    if (currentTrack && isPlaying) {
+      pauseTrack()
+      console.log('⏸️ Pause de la lecture')
+    } else if (currentTrack && !isPlaying) {
+      resumeTrack()
+      console.log('▶️ Reprise de la lecture')
+    }
   }
 
   const formatDuration = (seconds) => {
@@ -314,7 +436,10 @@ const PlaylistDetail = () => {
     return (
       <Container>
         <Header title="Playlist" showBack />
-        <div style={{ textAlign: 'center', padding: 40 }}>Chargement...</div>
+        <LoadingSpinner>
+          <div>Chargement de la playlist...</div>
+        </LoadingSpinner>
+        <MusicPlayer />
         <BottomNavigation />
       </Container>
     )
@@ -327,6 +452,9 @@ const PlaylistDetail = () => {
         <EmptyState>
           <div className="icon">🎵</div>
           <div>Playlist non trouvée</div>
+          <Button onClick={() => navigate('/fan/music')} style={{ marginTop: 20 }}>
+            Retour à la musique
+          </Button>
         </EmptyState>
         <BottomNavigation />
       </Container>
@@ -336,6 +464,9 @@ const PlaylistDetail = () => {
   const totalDuration = tracks.reduce((sum, t) => sum + (t.duration || 0), 0)
   const totalMinutes = Math.floor(totalDuration / 60)
   const totalSeconds = totalDuration % 60
+
+  // Vérifier si le morceau en cours de lecture est dans cette playlist
+  const isCurrentTrackInPlaylist = currentTrack && tracks.some(t => t.id === currentTrack.id)
 
   return (
     <Container>
@@ -362,21 +493,35 @@ const PlaylistDetail = () => {
           <span>@{playlist.user?.username}</span>
         </PlaylistCreator>
         <PlaylistStats>
-          {tracks.length} morceaux • {totalMinutes}:{totalSeconds.toString().padStart(2, '0')} • {playlist.follower_count || 0} abonnés
+          {tracks.length} morceaux • {totalMinutes}:{totalSeconds.toString().padStart(2, '0')} • {playlist.follower_count || 0} abonnés • {playlist.like_count || 0} ❤️
         </PlaylistStats>
         
         <ActionButtons>
-          <Button onClick={handlePlayAll}>
+          <Button onClick={handlePlayAll} whileTap={{ scale: 0.98 }}>
             ▶️ Tout écouter
           </Button>
-          <Button variant="outline" onClick={handleFollow}>
+          <Button variant="outline" onClick={handleFollow} whileTap={{ scale: 0.98 }}>
             {isFollowing ? '✓ Abonné' : '+ S\'abonner'}
           </Button>
-          <Button variant="outline" onClick={handleLike}>
+          <Button variant="outline" onClick={handleLike} whileTap={{ scale: 0.98 }}>
             {isLiked ? '❤️' : '🤍'}
           </Button>
         </ActionButtons>
       </PlaylistInfo>
+      
+      {/* Barre de lecture en cours si un morceau de la playlist est en cours */}
+      {isCurrentTrackInPlaylist && currentTrack && (
+        <NowPlayingBar onClick={handleTogglePlayback}>
+          <NowPlayingCover src={currentTrack.cover_url || '/images/default-album.jpg'} />
+          <NowPlayingInfo>
+            <NowPlayingTitle>{currentTrack.title}</NowPlayingTitle>
+            <NowPlayingArtist>{currentTrack.artist?.username}</NowPlayingArtist>
+          </NowPlayingInfo>
+          <NowPlayingControl whileTap={{ scale: 0.9 }}>
+            {isPlaying ? '⏸️' : '▶️'}
+          </NowPlayingControl>
+        </NowPlayingBar>
+      )}
       
       {tracks.length === 0 ? (
         <EmptyState>
@@ -385,22 +530,36 @@ const PlaylistDetail = () => {
         </EmptyState>
       ) : (
         <TrackList>
-          {tracks.map((track, index) => (
-            <TrackItem
-              key={track.id}
-              onClick={() => handlePlayTrack(track)}
-              whileTap={{ scale: 0.98 }}
-            >
-              <TrackNumber>{index + 1}</TrackNumber>
-              <TrackCover src={track.cover_url || '/images/default-album.jpg'} />
-              <TrackInfo>
-                <TrackTitle>{track.title}</TrackTitle>
-                <TrackArtist>{track.artist?.username}</TrackArtist>
-              </TrackInfo>
-              <TrackDuration>{formatDuration(track.duration)}</TrackDuration>
-              <PlayButton>▶️</PlayButton>
-            </TrackItem>
-          ))}
+          {tracks.map((track, index) => {
+            const isCurrentTrack = currentTrack?.id === track.id
+            return (
+              <TrackItem
+                key={track.id}
+                onClick={() => handlePlayTrack(track)}
+                whileTap={{ scale: 0.98 }}
+                style={{
+                  background: isCurrentTrack ? `${theme.colors.primary}20` : undefined,
+                  border: isCurrentTrack ? `1px solid ${theme.colors.primary}` : undefined
+                }}
+              >
+                <TrackNumber>{index + 1}</TrackNumber>
+                <TrackCover src={track.cover_url || '/images/default-album.jpg'} />
+                <TrackInfo>
+                  <TrackTitle>{track.title}</TrackTitle>
+                  <TrackArtist>{track.artist?.username}</TrackArtist>
+                </TrackInfo>
+                <TrackDuration>{formatDuration(track.duration)}</TrackDuration>
+                <PlayButton
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    handlePlayTrack(track)
+                  }}
+                >
+                  {isCurrentTrack && isPlaying ? '⏸️' : '▶️'}
+                </PlayButton>
+              </TrackItem>
+            )
+          })}
         </TrackList>
       )}
       

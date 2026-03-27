@@ -13,10 +13,12 @@ const configuration = {
   ]
 }
 
-export const useWebRTC = ({ onRemoteStream, onConnectionStateChange }) => {
+export const useWebRTC = ({ onRemoteStream, onConnectionStateChange, onIceCandidate }) => {
   const [localStream, setLocalStream] = useState(null)
   const [peerConnection, setPeerConnection] = useState(null)
   const [isConnected, setIsConnected] = useState(false)
+  const [isAudioEnabled, setIsAudioEnabled] = useState(true)
+  const [isVideoEnabled, setIsVideoEnabled] = useState(true)
   
   const peerRef = useRef(null)
   const localStreamRef = useRef(null)
@@ -25,9 +27,11 @@ export const useWebRTC = ({ onRemoteStream, onConnectionStateChange }) => {
     return () => {
       if (localStreamRef.current) {
         localStreamRef.current.getTracks().forEach(track => track.stop())
+        console.log('🎥 Local stream stopped')
       }
       if (peerRef.current) {
         peerRef.current.close()
+        console.log('🔌 Peer connection closed')
       }
     }
   }, [])
@@ -40,6 +44,14 @@ export const useWebRTC = ({ onRemoteStream, onConnectionStateChange }) => {
       })
       setLocalStream(stream)
       localStreamRef.current = stream
+      setIsAudioEnabled(audio)
+      setIsVideoEnabled(video)
+      
+      console.log('📷 Local stream initialized:', {
+        audio,
+        video,
+        tracks: stream.getTracks().length
+      })
       return stream
     } catch (error) {
       console.error('Error accessing media devices:', error)
@@ -53,30 +65,47 @@ export const useWebRTC = ({ onRemoteStream, onConnectionStateChange }) => {
     pc.onicecandidate = (event) => {
       if (event.candidate) {
         // Envoyer le candidat ICE via le serveur de signalisation
-        onIceCandidate?.(event.candidate)
+        if (onIceCandidate) {
+          onIceCandidate(event.candidate)
+          console.log('🧊 ICE candidate sent:', event.candidate.type)
+        }
       }
     }
     
     pc.ontrack = (event) => {
       if (onRemoteStream) {
         onRemoteStream(event.streams[0])
+        console.log('📡 Remote stream received')
       }
+    }
+    
+    pc.oniceconnectionstatechange = () => {
+      const state = pc.iceConnectionState
+      console.log('🔌 ICE connection state:', state)
     }
     
     pc.onconnectionstatechange = () => {
       const state = pc.connectionState
       setIsConnected(state === 'connected')
-      onConnectionStateChange?.(state)
+      if (onConnectionStateChange) {
+        onConnectionStateChange(state)
+      }
+      console.log('🔗 Connection state:', state)
+    }
+    
+    pc.onsignalingstatechange = () => {
+      console.log('📡 Signaling state:', pc.signalingState)
     }
     
     peerRef.current = pc
     setPeerConnection(pc)
     return pc
-  }, [onRemoteStream, onConnectionStateChange])
+  }, [onRemoteStream, onConnectionStateChange, onIceCandidate])
 
   const addLocalStream = useCallback(async (pc, stream) => {
     stream.getTracks().forEach(track => {
       pc.addTrack(track, stream)
+      console.log('➕ Track added:', track.kind)
     })
   }, [])
 
@@ -88,6 +117,7 @@ export const useWebRTC = ({ onRemoteStream, onConnectionStateChange }) => {
     const pc = peerRef.current
     const offer = await pc.createOffer()
     await pc.setLocalDescription(offer)
+    console.log('📝 Offer created:', offer.type)
     return offer
   }, [createPeerConnection])
 
@@ -100,18 +130,21 @@ export const useWebRTC = ({ onRemoteStream, onConnectionStateChange }) => {
     await pc.setRemoteDescription(new RTCSessionDescription(offer))
     const answer = await pc.createAnswer()
     await pc.setLocalDescription(answer)
+    console.log('📝 Answer created:', answer.type)
     return answer
   }, [createPeerConnection])
 
   const setRemoteAnswer = useCallback(async (answer) => {
     if (peerRef.current) {
       await peerRef.current.setRemoteDescription(new RTCSessionDescription(answer))
+      console.log('📝 Remote answer set')
     }
   }, [])
 
   const addIceCandidate = useCallback(async (candidate) => {
     if (peerRef.current) {
       await peerRef.current.addIceCandidate(new RTCIceCandidate(candidate))
+      console.log('🧊 ICE candidate added:', candidate.type)
     }
   }, [])
 
@@ -119,8 +152,11 @@ export const useWebRTC = ({ onRemoteStream, onConnectionStateChange }) => {
     if (localStreamRef.current) {
       const audioTrack = localStreamRef.current.getAudioTracks()[0]
       if (audioTrack) {
-        audioTrack.enabled = !audioTrack.enabled
-        return audioTrack.enabled
+        const newState = !audioTrack.enabled
+        audioTrack.enabled = newState
+        setIsAudioEnabled(newState)
+        console.log('🎤 Audio:', newState ? 'enabled' : 'disabled')
+        return newState
       }
     }
     return false
@@ -130,9 +166,28 @@ export const useWebRTC = ({ onRemoteStream, onConnectionStateChange }) => {
     if (localStreamRef.current) {
       const videoTrack = localStreamRef.current.getVideoTracks()[0]
       if (videoTrack) {
-        videoTrack.enabled = !videoTrack.enabled
-        return videoTrack.enabled
+        const newState = !videoTrack.enabled
+        videoTrack.enabled = newState
+        setIsVideoEnabled(newState)
+        console.log('📷 Video:', newState ? 'enabled' : 'disabled')
+        return newState
       }
+    }
+    return false
+  }, [])
+
+  const getAudioState = useCallback(() => {
+    if (localStreamRef.current) {
+      const audioTrack = localStreamRef.current.getAudioTracks()[0]
+      return audioTrack ? audioTrack.enabled : false
+    }
+    return false
+  }, [])
+
+  const getVideoState = useCallback(() => {
+    if (localStreamRef.current) {
+      const videoTrack = localStreamRef.current.getVideoTracks()[0]
+      return videoTrack ? videoTrack.enabled : false
     }
     return false
   }, [])
@@ -141,10 +196,12 @@ export const useWebRTC = ({ onRemoteStream, onConnectionStateChange }) => {
     if (peerRef.current) {
       peerRef.current.close()
       peerRef.current = null
+      console.log('🔌 Call ended, peer connection closed')
     }
     if (localStreamRef.current) {
       localStreamRef.current.getTracks().forEach(track => track.stop())
       localStreamRef.current = null
+      console.log('🎥 Local stream stopped')
     }
     setLocalStream(null)
     setPeerConnection(null)
@@ -155,6 +212,8 @@ export const useWebRTC = ({ onRemoteStream, onConnectionStateChange }) => {
     localStream,
     peerConnection,
     isConnected,
+    isAudioEnabled,
+    isVideoEnabled,
     initLocalStream,
     createPeerConnection,
     addLocalStream,
@@ -164,6 +223,8 @@ export const useWebRTC = ({ onRemoteStream, onConnectionStateChange }) => {
     addIceCandidate,
     toggleAudio,
     toggleVideo,
+    getAudioState,
+    getVideoState,
     endCall
   }
 }

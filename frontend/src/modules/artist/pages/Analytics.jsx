@@ -1,5 +1,5 @@
 // src/modules/artist/pages/Analytics.jsx
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import styled from 'styled-components'
 import { motion } from 'framer-motion'
 import { Header } from '../../shared/components/layout/Header'
@@ -12,6 +12,7 @@ import {
   XAxis, YAxis, CartesianGrid, Tooltip, Legend,
   ResponsiveContainer, PieChart, Pie, Cell
 } from 'recharts'
+import { toast } from 'react-hot-toast'
 
 const Container = styled.div`
   min-height: 100vh;
@@ -64,6 +65,16 @@ const StatLabel = styled.div`
   margin-top: 4px;
 `
 
+const StatChange = styled.div`
+  font-size: 11px;
+  margin-top: 6px;
+  color: ${props => props.positive ? '#00C851' : '#FF4444'};
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+`
+
 const ChartContainer = styled.div`
   background: ${props => props.theme.surface};
   border-radius: 16px;
@@ -79,6 +90,20 @@ const SectionTitle = styled.h3`
   color: ${props => props.theme.text};
 `
 
+const LoadingSpinner = styled.div`
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 40px;
+  color: ${props => props.theme.textSecondary};
+`
+
+const EmptyState = styled.div`
+  text-align: center;
+  padding: 40px;
+  color: ${props => props.theme.textSecondary};
+`
+
 const COLORS = ['#FF6B35', '#33B5E5', '#00C851', '#FFB444']
 
 const Analytics = () => {
@@ -92,39 +117,50 @@ const Analytics = () => {
   const [playsData, setPlaysData] = useState([])
   const [genreDistribution, setGenreDistribution] = useState([])
   const [loading, setLoading] = useState(true)
+  const [weeklyGrowth, setWeeklyGrowth] = useState(0)
 
-  useEffect(() => {
-    loadAnalytics()
-  }, [])
-
-  const loadAnalytics = async () => {
+  const loadAnalytics = useCallback(async () => {
     setLoading(true)
     try {
       // Récupérer les morceaux
-      const { data: tracks } = await supabase
+      const { data: tracks, error: tracksError } = await supabase
         .from('tracks')
         .select('*')
         .eq('artist_id', user.id)
+      
+      if (tracksError) throw tracksError
       
       const totalPlays = tracks?.reduce((sum, t) => sum + (t.play_count || 0), 0) || 0
       const totalLikes = tracks?.reduce((sum, t) => sum + (t.like_count || 0), 0) || 0
       
       // Récupérer les abonnés
-      const { count: followersCount } = await supabase
+      const { count: followersCount, error: followersError } = await supabase
         .from('follows')
         .select('*', { count: 'exact', head: true })
         .eq('following_id', user.id)
       
-      // Données d'écoutes par jour (simulation)
+      if (followersError) throw followersError
+      
+      // Données d'écoutes par jour (simulation - en production, utiliser des données réelles)
       const last7Days = []
+      const previousWeekPlays = []
+      
       for (let i = 6; i >= 0; i--) {
         const date = new Date()
         date.setDate(date.getDate() - i)
+        const randomPlays = Math.floor(Math.random() * 100) + 50
         last7Days.push({
           date: date.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' }),
-          plays: Math.floor(Math.random() * 100)
+          plays: randomPlays
         })
+        previousWeekPlays.push(randomPlays - 20)
       }
+      
+      // Calculer la croissance hebdomadaire
+      const currentWeekTotal = last7Days.reduce((sum, d) => sum + d.plays, 0)
+      const previousWeekTotal = previousWeekPlays.reduce((sum, d) => sum + d, 0)
+      const growth = previousWeekTotal ? ((currentWeekTotal - previousWeekTotal) / previousWeekTotal * 100) : 0
+      setWeeklyGrowth(growth)
       
       // Distribution par genre
       const genreMap = {}
@@ -144,18 +180,40 @@ const Analytics = () => {
       })
       setPlaysData(last7Days)
       setGenreDistribution(genreData)
+      
+      console.log('📊 Analytics chargés:', {
+        totalPlays,
+        totalLikes,
+        followers: followersCount,
+        tracks: tracks?.length,
+        weeklyGrowth: growth
+      })
     } catch (error) {
       console.error('Error loading analytics:', error)
+      toast.error('Erreur lors du chargement des statistiques')
     } finally {
       setLoading(false)
     }
+  }, [user.id])
+
+  useEffect(() => {
+    loadAnalytics()
+  }, [loadAnalytics])
+
+  const formatNumber = (num) => {
+    if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M'
+    if (num >= 1000) return (num / 1000).toFixed(1) + 'k'
+    return num?.toString() || '0'
   }
 
   if (loading) {
     return (
       <Container>
         <Header title="Analytics" showBack />
-        <div style={{ textAlign: 'center', padding: 40 }}>Chargement...</div>
+        <LoadingSpinner>
+          <div>Chargement de vos statistiques...</div>
+        </LoadingSpinner>
+        <MusicPlayer />
         <BottomNavigation />
       </Container>
     )
@@ -172,15 +230,21 @@ const Analytics = () => {
       
       <StatsGrid>
         <StatCard whileTap={{ scale: 0.98 }}>
-          <StatValue>{stats.totalPlays.toLocaleString()}</StatValue>
+          <StatValue>{formatNumber(stats.totalPlays)}</StatValue>
           <StatLabel>Écoutes totales</StatLabel>
+          <StatChange positive={weeklyGrowth > 0}>
+            {weeklyGrowth > 0 ? '↑' : '↓'} {Math.abs(weeklyGrowth).toFixed(1)}% cette semaine
+          </StatChange>
         </StatCard>
         <StatCard whileTap={{ scale: 0.98 }}>
-          <StatValue>{stats.totalLikes.toLocaleString()}</StatValue>
+          <StatValue>{formatNumber(stats.totalLikes)}</StatValue>
           <StatLabel>Likes</StatLabel>
+          <StatLabel style={{ fontSize: 10, marginTop: 4 }}>
+            {(stats.totalLikes / stats.totalPlays * 100).toFixed(1)}% de taux d'engagement
+          </StatLabel>
         </StatCard>
         <StatCard whileTap={{ scale: 0.98 }}>
-          <StatValue>{stats.totalFollowers.toLocaleString()}</StatValue>
+          <StatValue>{formatNumber(stats.totalFollowers)}</StatValue>
           <StatLabel>Abonnés</StatLabel>
         </StatCard>
         <StatCard whileTap={{ scale: 0.98 }}>
@@ -191,16 +255,20 @@ const Analytics = () => {
       
       <SectionTitle>Écoutes des 7 derniers jours</SectionTitle>
       <ChartContainer>
-        <ResponsiveContainer width="100%" height="100%">
-          <LineChart data={playsData}>
-            <CartesianGrid strokeDasharray="3 3" />
-            <XAxis dataKey="date" />
-            <YAxis />
-            <Tooltip />
-            <Legend />
-            <Line type="monotone" dataKey="plays" stroke="#FF6B35" strokeWidth={2} />
-          </LineChart>
-        </ResponsiveContainer>
+        {playsData.length > 0 ? (
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart data={playsData}>
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis dataKey="date" />
+              <YAxis />
+              <Tooltip />
+              <Legend />
+              <Line type="monotone" dataKey="plays" stroke="#FF6B35" strokeWidth={2} dot={{ r: 4 }} />
+            </LineChart>
+          </ResponsiveContainer>
+        ) : (
+          <EmptyState>Aucune donnée d'écoute disponible</EmptyState>
+        )}
       </ChartContainer>
       
       {genreDistribution.length > 0 && (
@@ -228,6 +296,25 @@ const Analytics = () => {
             </ResponsiveContainer>
           </ChartContainer>
         </>
+      )}
+      
+      {genreDistribution.length === 0 && stats.totalTracks > 0 && (
+        <EmptyState>
+          <p>Aucun genre défini pour vos morceaux</p>
+          <p style={{ fontSize: 12, marginTop: 8 }}>
+            Ajoutez des genres à vos morceaux pour voir la distribution
+          </p>
+        </EmptyState>
+      )}
+      
+      {stats.totalTracks === 0 && (
+        <EmptyState>
+          <div style={{ fontSize: 48, marginBottom: 16 }}>🎵</div>
+          <p>Aucun morceau publié</p>
+          <p style={{ fontSize: 12, marginTop: 8 }}>
+            Publiez votre premier morceau pour voir vos statistiques
+          </p>
+        </EmptyState>
       )}
       
       <MusicPlayer />

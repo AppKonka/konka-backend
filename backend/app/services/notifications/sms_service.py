@@ -4,8 +4,9 @@ from twilio.rest import Client
 from twilio.twiml.messaging_response import MessagingResponse
 import logging
 from typing import Dict, List, Optional, Any
-from datetime import datetime
+from datetime import datetime, timedelta
 import re
+import random
 from app.config import settings
 from app.database import db
 
@@ -107,11 +108,10 @@ class SMSService:
     async def send_verification_code(self, phone_number: str) -> Dict[str, Any]:
         """Envoie un code de vérification par SMS"""
         try:
-            import random
             code = f"{random.randint(100000, 999999)}"
             
             # Sauvegarder le code
-            await db.table('verification_codes').insert({
+            result = await db.table('verification_codes').insert({
                 "phone_number": phone_number,
                 "code": code,
                 "type": "sms_verification",
@@ -124,6 +124,10 @@ class SMSService:
                 to_number=phone_number,
                 message=self.templates["verification"].format(code=code)
             )
+            
+            # Utiliser les données de résultat pour le log
+            if result.data:
+                logger.info(f"Verification code saved for {phone_number}: {result.data[0]['id']}")
             
             return {
                 "success": success,
@@ -148,10 +152,13 @@ class SMSService:
             
             if result.data:
                 # Marquer comme utilisé
+                verification_id = result.data[0]['id']
                 await db.table('verification_codes').update({
                     "verified_at": datetime.now().isoformat(),
                     "is_used": True
-                }).eq('id', result.data[0]['id']).execute()
+                }).eq('id', verification_id).execute()
+                
+                logger.info(f"Verification code {code} verified for {phone_number}")
                 return True
             
             return False
@@ -169,6 +176,7 @@ class SMSService:
             template_name="welcome",
             template_data={"username": username}
         )
+        logger.info(f"Welcome SMS sent to {phone_number} for user {username}")
     
     async def send_password_reset_sms(self, phone_number: str, code: str):
         """Envoie un SMS de réinitialisation de mot de passe"""
@@ -177,6 +185,7 @@ class SMSService:
             template_name="password_reset",
             template_data={"code": code}
         )
+        logger.info(f"Password reset SMS sent to {phone_number}")
     
     async def send_order_confirmation_sms(self, phone_number: str, order_id: str):
         """Envoie un SMS de confirmation de commande"""
@@ -185,6 +194,7 @@ class SMSService:
             template_name="order_confirmation",
             template_data={"order_id": order_id}
         )
+        logger.info(f"Order confirmation SMS sent for order {order_id}")
     
     async def send_order_shipped_sms(self, phone_number: str, order_id: str, tracking: str):
         """Envoie un SMS de commande expédiée"""
@@ -193,6 +203,7 @@ class SMSService:
             template_name="order_shipped",
             template_data={"order_id": order_id, "tracking": tracking}
         )
+        logger.info(f"Order shipped SMS sent for order {order_id}")
     
     async def send_new_match_sms(self, phone_number: str, username: str):
         """Envoie un SMS de nouveau match"""
@@ -201,6 +212,7 @@ class SMSService:
             template_name="new_match",
             template_data={"username": username}
         )
+        logger.info(f"New match SMS sent to {phone_number}")
     
     async def send_new_message_sms(self, phone_number: str, username: str, preview: str):
         """Envoie un SMS de nouveau message"""
@@ -209,6 +221,7 @@ class SMSService:
             template_name="new_message",
             template_data={"username": username, "preview": preview[:50]}
         )
+        logger.info(f"New message SMS sent to {phone_number} from {username}")
     
     async def send_dedication_ready_sms(self, phone_number: str, artist: str):
         """Envoie un SMS de dédicace prête"""
@@ -217,6 +230,25 @@ class SMSService:
             template_name="dedication_ready",
             template_data={"artist": artist}
         )
+        logger.info(f"Dedication ready SMS sent to {phone_number} for artist {artist}")
+    
+    async def send_payment_success_sms(self, phone_number: str, amount: float):
+        """Envoie un SMS de paiement réussi"""
+        await self.send_sms(
+            to_number=phone_number,
+            template_name="payment_success",
+            template_data={"amount": amount}
+        )
+        logger.info(f"Payment success SMS sent to {phone_number} for {amount}€")
+    
+    async def send_payment_failed_sms(self, phone_number: str, amount: float):
+        """Envoie un SMS de paiement échoué"""
+        await self.send_sms(
+            to_number=phone_number,
+            template_name="payment_failed",
+            template_data={"amount": amount}
+        )
+        logger.info(f"Payment failed SMS sent to {phone_number} for {amount}€")
     
     # ==================== WEBHOOK SMS ====================
     
@@ -227,11 +259,14 @@ class SMSService:
             body = request_data.get('Body')
             
             # Log le SMS reçu
-            await db.table('incoming_sms').insert({
+            result = await db.table('incoming_sms').insert({
                 "from_number": from_number,
                 "body": body,
                 "received_at": datetime.now().isoformat()
             }).execute()
+            
+            if result.data:
+                logger.info(f"Incoming SMS received from {from_number}: {result.data[0]['id']}")
             
             # Traiter la réponse
             resp = MessagingResponse()
@@ -259,18 +294,25 @@ class SMSService:
             # Récupérer la commande
             order = await db.table('orders').select('*').eq('id', order_id).execute()
             if order.data:
-                await db.table('order_feedback').insert({
+                # Sauvegarder le feedback
+                feedback_result = await db.table('order_feedback').insert({
                     "order_id": order_id,
                     "phone_number": phone_number,
                     "response": response,
                     "created_at": datetime.now().isoformat()
                 }).execute()
                 
+                if feedback_result.data:
+                    logger.info(f"Order feedback saved for order {order_id}: {feedback_result.data[0]['id']}")
+                
                 if "LIVRE" in response.upper() or "RECU" in response.upper():
-                    await db.table('orders').update({
+                    update_result = await db.table('orders').update({
                         "status": "delivered",
                         "delivered_at": datetime.now().isoformat()
                     }).eq('id', order_id).execute()
+                    
+                    if update_result.data:
+                        logger.info(f"Order {order_id} marked as delivered via SMS")
                 
         except Exception as e:
             logger.error(f"Error processing order status response: {e}")
@@ -303,7 +345,7 @@ class SMSService:
     ):
         """Log l'envoi de SMS dans la base de données"""
         try:
-            await db.table('sms_logs').insert({
+            result = await db.table('sms_logs').insert({
                 "to_number": to_number,
                 "message": message[:500],
                 "status": status,
@@ -311,13 +353,15 @@ class SMSService:
                 "error": error,
                 "created_at": datetime.now().isoformat()
             }).execute()
+            
+            if result.data:
+                logger.debug(f"SMS log created: {result.data[0]['id']}")
         except Exception as e:
             logger.error(f"Error logging SMS: {e}")
     
     async def get_sms_stats(self, days: int = 30) -> Dict[str, Any]:
         """Récupère les statistiques d'envoi de SMS"""
         try:
-            from datetime import timedelta
             start_date = (datetime.now() - timedelta(days=days)).isoformat()
             
             logs = await db.table('sms_logs').select('status')\

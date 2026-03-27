@@ -7,23 +7,34 @@ import { Button } from '../../shared/components/ui/Button'
 import { Input } from '../../shared/components/ui/Input'
 import { useTheme } from '../../shared/context/ThemeContext'
 import { useAuth } from '../../shared/context/AuthContext'
+import { toast } from 'react-hot-toast'
 
-const Container = styled.div`
+const Container = styled(motion.div)`
   min-height: 100vh;
   padding: 40px 20px;
   background: ${props => props.theme.background};
 `
 
-const BackButton = styled.button`
+const BackButton = styled(motion.button)`
   background: none;
   border: none;
   font-size: 24px;
   cursor: pointer;
   margin-bottom: 24px;
   color: ${props => props.theme.text};
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 20px;
+  
+  &:hover {
+    background: ${props => props.theme.border}40;
+  }
 `
 
-const Title = styled.h1`
+const Title = styled(motion.h1)`
   font-size: 32px;
   font-weight: 700;
   margin-bottom: 8px;
@@ -33,20 +44,20 @@ const Title = styled.h1`
   background-clip: text;
 `
 
-const Subtitle = styled.p`
+const Subtitle = styled(motion.p)`
   font-size: 14px;
   color: ${props => props.theme.textSecondary};
   margin-bottom: 32px;
 `
 
-const Form = styled.form`
+const Form = styled(motion.form)`
   display: flex;
   flex-direction: column;
   gap: 16px;
   margin-bottom: 24px;
 `
 
-const TermsText = styled.p`
+const TermsText = styled(motion.p)`
   font-size: 12px;
   color: ${props => props.theme.textSecondary};
   text-align: center;
@@ -55,10 +66,14 @@ const TermsText = styled.p`
   a {
     color: ${props => props.theme.primary};
     text-decoration: none;
+    
+    &:hover {
+      text-decoration: underline;
+    }
   }
 `
 
-const LoginLink = styled.p`
+const LoginLink = styled(motion.p)`
   text-align: center;
   margin-top: 24px;
   font-size: 14px;
@@ -68,7 +83,32 @@ const LoginLink = styled.p`
     color: ${props => props.theme.primary};
     text-decoration: none;
     font-weight: 600;
+    
+    &:hover {
+      text-decoration: underline;
+    }
   }
+`
+
+const GenderSelect = styled(motion.select)`
+  padding: 12px 16px;
+  border-radius: 12px;
+  border: 1px solid ${props => props.error ? '#FF4444' : props.theme.border};
+  background: ${props => props.theme.surface};
+  color: ${props => props.theme.text};
+  font-size: 16px;
+  
+  &:focus {
+    outline: none;
+    border-color: ${props => props.theme.primary};
+  }
+`
+
+const ErrorText = styled(motion.span)`
+  color: #FF4444;
+  font-size: 12px;
+  margin-top: 4px;
+  display: block;
 `
 
 const Register = () => {
@@ -98,6 +138,7 @@ const Register = () => {
   // Si aucun rôle n'est spécifié, rediriger vers le choix du rôle
   useEffect(() => {
     if (!role) {
+      toast.error('Veuillez d\'abord choisir un rôle')
       navigate('/role-selection')
     }
   }, [role, navigate])
@@ -153,7 +194,10 @@ const Register = () => {
     })
     
     if (result.success) {
+      toast.success('Inscription réussie !')
       navigate('/role-selection')
+    } else {
+      toast.error(result.error || 'Erreur lors de l\'inscription')
     }
     
     setLoading(false)
@@ -172,16 +216,47 @@ const Register = () => {
     }
   }
 
+  const roleLabel = role === 'fan' ? 'Fan' : role === 'artist' ? 'Artiste' : 'Vendeur'
+
   return (
-    <Container theme={theme}>
-      <BackButton onClick={() => navigate('/')} theme={theme}>
+    <Container
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.3 }}
+      theme={theme}
+    >
+      <BackButton
+        onClick={() => navigate('/')}
+        whileTap={{ scale: 0.95 }}
+        whileHover={{ scale: 1.05 }}
+        theme={theme}
+      >
         ←
       </BackButton>
       
-      <Title>Créer un compte {role && `en tant que ${role === 'fan' ? 'Fan' : role === 'artist' ? 'Artiste' : 'Vendeur'}`}</Title>
-      <Subtitle>Rejoins la communauté Konka</Subtitle>
+      <Title
+        initial={{ opacity: 0, y: -20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.5 }}
+      >
+        Créer un compte {role && `en tant que ${roleLabel}`}
+      </Title>
       
-      <Form onSubmit={handleSubmit}>
+      <Subtitle
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ duration: 0.5, delay: 0.1 }}
+      >
+        Rejoins la communauté Konka
+      </Subtitle>
+      
+      <Form
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.5, delay: 0.2 }}
+        onSubmit={handleSubmit}
+      >
         <Input
           type="email"
           name="email"
@@ -252,26 +327,28 @@ const Register = () => {
           icon="🎂"
         />
         
-        <select
+        <GenderSelect
           name="gender"
           value={formData.gender}
           onChange={handleChange}
-          style={{
-            padding: '12px 16px',
-            borderRadius: '12px',
-            border: `1px solid ${errors.gender ? '#FF4444' : theme.colors.border}`,
-            background: theme.colors.surface,
-            color: theme.colors.text,
-            fontSize: '16px',
-          }}
+          error={errors.gender}
+          theme={theme}
+          whileTap={{ scale: 0.99 }}
         >
           <option value="">Genre</option>
           <option value="male">Homme</option>
           <option value="female">Femme</option>
           <option value="other">Autre</option>
           <option value="prefer_not">Non précisé</option>
-        </select>
-        {errors.gender && <span style={{ color: '#FF4444', fontSize: '12px' }}>{errors.gender}</span>}
+        </GenderSelect>
+        {errors.gender && (
+          <ErrorText
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+          >
+            {errors.gender}
+          </ErrorText>
+        )}
         
         <Input
           type="text"
@@ -292,18 +369,33 @@ const Register = () => {
           icon="📍"
         />
         
-        <Button type="submit" fullWidth loading={loading}>
+        <Button
+          type="submit"
+          fullWidth
+          loading={loading}
+          whileTap={{ scale: 0.98 }}
+        >
           S'inscrire
         </Button>
       </Form>
       
-      <TermsText theme={theme}>
+      <TermsText
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ duration: 0.5, delay: 0.4 }}
+        theme={theme}
+      >
         En créant un compte, vous acceptez nos{' '}
         <Link to="/terms">Conditions d'utilisation</Link> et notre{' '}
         <Link to="/privacy">Politique de confidentialité</Link>
       </TermsText>
       
-      <LoginLink theme={theme}>
+      <LoginLink
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ duration: 0.5, delay: 0.45 }}
+        theme={theme}
+      >
         Déjà un compte ? <Link to="/login">Se connecter</Link>
       </LoginLink>
     </Container>

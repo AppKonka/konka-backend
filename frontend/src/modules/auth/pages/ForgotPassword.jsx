@@ -17,16 +17,26 @@ const Container = styled.div`
   flex-direction: column;
 `
 
-const BackButton = styled.button`
+const BackButton = styled(motion.button)`
   background: none;
   border: none;
   font-size: 24px;
   cursor: pointer;
   margin-bottom: 40px;
   color: ${props => props.theme.text};
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 20px;
+  
+  &:hover {
+    background: ${props => props.theme.border}40;
+  }
 `
 
-const Logo = styled.div`
+const Logo = styled(motion.div)`
   text-align: center;
   margin-bottom: 48px;
   
@@ -40,25 +50,54 @@ const Logo = styled.div`
   }
 `
 
-const Title = styled.h2`
+const Title = styled(motion.h2)`
   font-size: 28px;
   font-weight: 700;
   margin-bottom: 8px;
   text-align: center;
+  color: ${props => props.theme.text};
 `
 
-const Subtitle = styled.p`
+const Subtitle = styled(motion.p)`
   font-size: 14px;
   color: ${props => props.theme.textSecondary};
   text-align: center;
   margin-bottom: 32px;
 `
 
-const Form = styled.form`
+const Form = styled(motion.form)`
   display: flex;
   flex-direction: column;
   gap: 16px;
   margin-bottom: 24px;
+`
+
+const SuccessContainer = styled(motion.div)`
+  text-align: center;
+  padding: 20px;
+  background: ${props => props.theme.surface};
+  border-radius: 24px;
+  margin: 20px 0;
+`
+
+const IconWrapper = styled(motion.div)`
+  font-size: 64px;
+  margin-bottom: 16px;
+`
+
+const LinkContainer = styled(motion.div)`
+  text-align: center;
+  margin-top: 24px;
+  
+  a {
+    color: ${props => props.theme.primary};
+    text-decoration: none;
+    font-weight: 500;
+    
+    &:hover {
+      text-decoration: underline;
+    }
+  }
 `
 
 const ForgotPassword = () => {
@@ -81,27 +120,57 @@ const ForgotPassword = () => {
     const result = await resetPassword(email)
     if (result.success) {
       setSent(true)
+      toast.success('Email de réinitialisation envoyé !')
     }
     setLoading(false)
   }
 
+  const handleBack = () => {
+    navigate('/login')
+  }
+
   return (
     <Container theme={theme}>
-      <BackButton onClick={() => navigate('/login')} theme={theme}>
+      <BackButton
+        onClick={handleBack}
+        whileTap={{ scale: 0.95 }}
+        whileHover={{ scale: 1.05 }}
+        theme={theme}
+      >
         ←
       </BackButton>
       
-      <Logo>
+      <Logo
+        initial={{ opacity: 0, y: -20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.5 }}
+      >
         <h1>KONKA</h1>
       </Logo>
       
-      <Title>Mot de passe oublié ?</Title>
-      <Subtitle>
+      <Title
+        initial={{ opacity: 0, y: -10 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.5, delay: 0.1 }}
+      >
+        Mot de passe oublié ?
+      </Title>
+      
+      <Subtitle
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ duration: 0.5, delay: 0.2 }}
+      >
         Entrez votre email et nous vous enverrons un lien pour réinitialiser votre mot de passe
       </Subtitle>
       
       {!sent ? (
-        <Form onSubmit={handleSubmit}>
+        <Form
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5, delay: 0.3 }}
+          onSubmit={handleSubmit}
+        >
           <Input
             type="email"
             placeholder="Email"
@@ -110,32 +179,54 @@ const ForgotPassword = () => {
             icon="📧"
           />
           
-          <Button type="submit" fullWidth loading={loading}>
+          <Button
+            type="submit"
+            fullWidth
+            loading={loading}
+            whileTap={{ scale: 0.98 }}
+          >
             Envoyer
           </Button>
         </Form>
       ) : (
-        <div style={{ textAlign: 'center', padding: 20 }}>
-          <div style={{ fontSize: 48, marginBottom: 16 }}>📧</div>
-          <p>Un email de réinitialisation a été envoyé à <strong>{email}</strong></p>
-          <p style={{ fontSize: 14, marginTop: 8, color: '#888' }}>
+        <SuccessContainer
+          initial={{ opacity: 0, scale: 0.9 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ duration: 0.5 }}
+        >
+          <IconWrapper
+            initial={{ scale: 0 }}
+            animate={{ scale: 1 }}
+            transition={{ type: 'spring', stiffness: 300, damping: 15 }}
+          >
+            📧
+          </IconWrapper>
+          <p style={{ marginBottom: 8 }}>
+            Un email de réinitialisation a été envoyé à <strong>{email}</strong>
+          </p>
+          <p style={{ fontSize: 14, color: '#888' }}>
             Vérifiez votre boîte de réception et vos spams
           </p>
           <Button
             variant="outline"
             onClick={() => navigate('/login')}
             style={{ marginTop: 24 }}
+            whileTap={{ scale: 0.98 }}
           >
             Retour à la connexion
           </Button>
-        </div>
+        </SuccessContainer>
       )}
       
-      <div style={{ textAlign: 'center', marginTop: 24 }}>
+      <LinkContainer
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ duration: 0.5, delay: 0.4 }}
+      >
         <Link to="/login" style={{ color: theme.colors.primary }}>
           Retour à la connexion
         </Link>
-      </div>
+      </LinkContainer>
     </Container>
   )
 }

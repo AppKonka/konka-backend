@@ -1,5 +1,5 @@
 // src/modules/artist/pages/ArtistDashboard.jsx
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import styled from 'styled-components'
 import { motion } from 'framer-motion'
@@ -10,6 +10,7 @@ import { Button } from '../../shared/components/ui/Button'
 import { MusicPlayer } from '../../shared/components/layout/MusicPlayer'
 import { useAuth } from '../../shared/context/AuthContext'
 import { supabase } from '../../../config/supabase'
+import { toast } from 'react-hot-toast'
 
 const Container = styled.div`
   min-height: 100vh;
@@ -226,6 +227,25 @@ const ReplayViews = styled.p`
   color: ${props => props.theme.textSecondary};
 `
 
+const LoadingSpinner = styled.div`
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 40px;
+  color: ${props => props.theme.textSecondary};
+`
+
+const EmptyState = styled.div`
+  text-align: center;
+  padding: 40px;
+  color: ${props => props.theme.textSecondary};
+  
+  .icon {
+    font-size: 48px;
+    margin-bottom: 16px;
+  }
+`
+
 const ArtistDashboard = () => {
   const navigate = useNavigate()
   const { user, userProfile } = useAuth()
@@ -240,11 +260,7 @@ const ArtistDashboard = () => {
   const [replays, setReplays] = useState([])
   const [loading, setLoading] = useState(true)
 
-  useEffect(() => {
-    loadDashboardData()
-  }, [])
-
-  const loadDashboardData = async () => {
+  const loadDashboardData = useCallback(async () => {
     setLoading(true)
     try {
       // Charger les statistiques
@@ -255,7 +271,7 @@ const ArtistDashboard = () => {
 
       const { data: tracksData } = await supabase
         .from('tracks')
-        .select('id, play_count')
+        .select('id, play_count, like_count')
         .eq('artist_id', user.id)
 
       const totalPlays = tracksData?.reduce((sum, t) => sum + (t.play_count || 0), 0) || 0
@@ -307,12 +323,24 @@ const ArtistDashboard = () => {
         .limit(5)
 
       setReplays(replaysData || [])
+      
+      console.log('📊 Tableau de bord chargé:', {
+        followers: followersCount,
+        plays: totalPlays,
+        tracks: tracksData?.length,
+        revenue: totalRevenue
+      })
     } catch (error) {
       console.error('Error loading dashboard data:', error)
+      toast.error('Erreur lors du chargement des données')
     } finally {
       setLoading(false)
     }
-  }
+  }, [user.id])
+
+  useEffect(() => {
+    loadDashboardData()
+  }, [loadDashboardData])
 
   const formatDate = (date) => {
     return new Date(date).toLocaleDateString('fr-FR', {
@@ -326,7 +354,20 @@ const ArtistDashboard = () => {
   const formatNumber = (num) => {
     if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M'
     if (num >= 1000) return (num / 1000).toFixed(1) + 'k'
-    return num.toString()
+    return num?.toString() || '0'
+  }
+
+  if (loading) {
+    return (
+      <Container>
+        <Header title="Tableau de bord" showProfile />
+        <LoadingSpinner>
+          <div>Chargement de votre tableau de bord...</div>
+        </LoadingSpinner>
+        <MusicPlayer />
+        <BottomNavigation />
+      </Container>
+    )
   }
 
   return (
@@ -353,11 +394,11 @@ const ArtistDashboard = () => {
         </StatCard>
         <StatCard whileTap={{ scale: 0.98 }}>
           <StatValue>{stats.tracks}</StatValue>
-          <StatLabel>Morceaux</StatLabel>
+          <StatLabel>Morceaux publiés</StatLabel>
         </StatCard>
         <StatCard whileTap={{ scale: 0.98 }}>
-          <StatValue>{stats.revenue}€</StatValue>
-          <StatLabel>Revenus</StatLabel>
+          <StatValue>{stats.revenue.toLocaleString()}€</StatValue>
+          <StatLabel>Revenus totaux</StatLabel>
         </StatCard>
       </StatsGrid>
       
@@ -374,20 +415,30 @@ const ArtistDashboard = () => {
         >
           🔴 Programmer un live
         </QuickActionButton>
+        <QuickActionButton
+          onClick={() => navigate('/artist/dedications')}
+          whileTap={{ scale: 0.95 }}
+        >
+          🎬 Voir les dédicaces
+        </QuickActionButton>
       </QuickActions>
       
-      {topTracks.length > 0 && (
+      {topTracks.length > 0 ? (
         <>
           <SectionTitle>Top morceaux</SectionTitle>
           <TopTracksList>
             {topTracks.map((track, index) => (
-              <TrackItem key={track.id} whileTap={{ scale: 0.98 }}>
+              <TrackItem 
+                key={track.id} 
+                onClick={() => navigate(`/artist/music/edit/${track.id}`)}
+                whileTap={{ scale: 0.98 }}
+              >
                 <TrackRank>#{index + 1}</TrackRank>
                 <TrackCover src={track.cover_url || '/images/default-album.jpg'} />
                 <TrackInfo>
                   <TrackTitle>{track.title}</TrackTitle>
                   <TrackStats>
-                    {formatNumber(track.play_count || 0)} écoutes
+                    {formatNumber(track.play_count || 0)} écoutes • {track.like_count || 0} ❤️
                   </TrackStats>
                 </TrackInfo>
                 <TrackPlays>
@@ -397,16 +448,33 @@ const ArtistDashboard = () => {
             ))}
           </TopTracksList>
         </>
+      ) : (
+        <EmptyState>
+          <div className="icon">🎵</div>
+          <div>Aucun morceau publié</div>
+          <Button onClick={() => navigate('/artist/music')} style={{ marginTop: 16 }}>
+            Publier mon premier morceau
+          </Button>
+        </EmptyState>
       )}
       
-      {upcomingLives.length > 0 && (
+      {upcomingLives.length > 0 ? (
         <>
           <SectionTitle>Prochains lives</SectionTitle>
           {upcomingLives.map(live => (
-            <UpcomingLiveCard key={live.id} whileTap={{ scale: 0.98 }}>
+            <UpcomingLiveCard 
+              key={live.id} 
+              onClick={() => navigate(`/artist/live/edit/${live.id}`)}
+              whileTap={{ scale: 0.98 }}
+            >
               <LiveInfo>
                 <LiveTitle>{live.title}</LiveTitle>
                 <LiveDate>📅 {formatDate(live.scheduled_at)}</LiveDate>
+                {live.description && (
+                  <p style={{ fontSize: 12, color: '#888', marginTop: 4 }}>
+                    {live.description.substring(0, 60)}...
+                  </p>
+                )}
               </LiveInfo>
               {live.price > 0 ? (
                 <LivePrice>{live.price}€</LivePrice>
@@ -416,6 +484,14 @@ const ArtistDashboard = () => {
             </UpcomingLiveCard>
           ))}
         </>
+      ) : (
+        <EmptyState>
+          <div className="icon">🔴</div>
+          <div>Aucun live programmé</div>
+          <Button onClick={() => navigate('/artist/live')} style={{ marginTop: 16 }}>
+            Programmer un live
+          </Button>
+        </EmptyState>
       )}
       
       {replays.length > 0 && (
@@ -423,7 +499,11 @@ const ArtistDashboard = () => {
           <SectionTitle>Replays récents</SectionTitle>
           <ReplayList>
             {replays.map(replay => (
-              <ReplayCard key={replay.id} whileTap={{ scale: 0.95 }}>
+              <ReplayCard 
+                key={replay.id} 
+                onClick={() => navigate(`/artist/live/replay/${replay.id}`)}
+                whileTap={{ scale: 0.95 }}
+              >
                 <ReplayThumbnail>
                   <img src={replay.thumbnail_url || '/images/default-live.jpg'} alt={replay.title} />
                 </ReplayThumbnail>

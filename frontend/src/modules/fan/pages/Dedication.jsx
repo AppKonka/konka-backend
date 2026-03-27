@@ -1,5 +1,5 @@
 // src/modules/fan/pages/Dedication.jsx
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import styled from 'styled-components'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Header } from '../../shared/components/layout/Header'
@@ -8,6 +8,7 @@ import { Avatar } from '../../shared/components/ui/Avatar'
 import { Button } from '../../shared/components/ui/Button'
 import { useAuth } from '../../shared/context/AuthContext'
 import { supabase } from '../../../config/supabase'
+import { toast } from 'react-hot-toast'
 
 const Container = styled.div`
   min-height: 100vh;
@@ -287,6 +288,32 @@ const Tab = styled(motion.button)`
   cursor: pointer;
 `
 
+const LoadingSpinner = styled.div`
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 40px;
+  color: ${props => props.theme.textSecondary};
+`
+
+const StatsBar = styled.div`
+  display: flex;
+  gap: 12px;
+  margin: 0 16px 16px;
+  flex-wrap: wrap;
+`
+
+const StatBadge = styled.div`
+  background: ${props => props.bg || props.theme.surface};
+  padding: 8px 12px;
+  border-radius: 20px;
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: ${props => props.theme.text};
+`
+
 const Dedication = () => {
   const [activeTab, setActiveTab] = useState('artists')
   const [artists, setArtists] = useState([])
@@ -295,6 +322,7 @@ const Dedication = () => {
   const [selectedArtist, setSelectedArtist] = useState(null)
   const [showModal, setShowModal] = useState(false)
   const [loading, setLoading] = useState(true)
+  const [submitting, setSubmitting] = useState(false)
   const [formData, setFormData] = useState({
     recipient: '',
     message: '',
@@ -306,12 +334,7 @@ const Dedication = () => {
   
   const { user } = useAuth()
 
-  useEffect(() => {
-    loadArtists()
-    loadOrders()
-  }, [searchQuery])
-
-  const loadArtists = async () => {
+  const loadArtists = useCallback(async () => {
     setLoading(true)
     try {
       let query = supabase
@@ -335,14 +358,17 @@ const Dedication = () => {
       
       if (error) throw error
       setArtists(data || [])
+      
+      console.log('🎤 Artistes chargés:', data?.length)
     } catch (error) {
       console.error('Error loading artists:', error)
+      toast.error('Erreur lors du chargement des artistes')
     } finally {
       setLoading(false)
     }
-  }
+  }, [searchQuery])
 
-  const loadOrders = async () => {
+  const loadOrders = useCallback(async () => {
     try {
       const { data, error } = await supabase
         .from('dedications')
@@ -355,36 +381,80 @@ const Dedication = () => {
       
       if (error) throw error
       setOrders(data || [])
+      
+      console.log('📦 Commandes chargées:', data?.length)
     } catch (error) {
       console.error('Error loading orders:', error)
+      toast.error('Erreur lors du chargement des commandes')
     }
-  }
+  }, [user.id])
+
+  useEffect(() => {
+    loadArtists()
+    loadOrders()
+  }, [loadArtists, loadOrders])
 
   const handleArtistClick = (artist) => {
     setSelectedArtist(artist)
     setShowModal(true)
+    console.log('🎨 Artiste sélectionné:', artist.username)
   }
 
   const handleSubmit = async () => {
+    if (!formData.message.trim()) {
+      toast.error('Veuillez écrire un message')
+      return
+    }
+    
+    if (!formData.recipient.trim()) {
+      toast.error('Veuillez indiquer le destinataire')
+      return
+    }
+    
+    setSubmitting(true)
+    
     try {
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from('dedications')
         .insert({
           artist_id: selectedArtist.id,
           fan_id: user.id,
           message: formData.message,
+          recipient: formData.recipient,
           type: formData.type,
+          duration: parseInt(formData.duration),
+          scheduled_date: formData.date || null,
+          visibility: formData.visibility,
           price: 29.99, // Prix par défaut, à définir par l'artiste
           status: 'pending',
           requested_at: new Date().toISOString(),
         })
+        .select()
       
       if (error) throw error
       
+      toast.success('Demande de dédicace envoyée !')
+      console.log('✨ Dédicace commandée:', {
+        artistId: selectedArtist.id,
+        dedicationId: data?.[0]?.id,
+        type: formData.type
+      })
+      
       setShowModal(false)
+      setFormData({
+        recipient: '',
+        message: '',
+        type: 'video',
+        duration: '30',
+        date: '',
+        visibility: 'private',
+      })
       loadOrders()
     } catch (error) {
       console.error('Error creating dedication:', error)
+      toast.error('Erreur lors de la commande')
+    } finally {
+      setSubmitting(false)
     }
   }
 
@@ -398,6 +468,36 @@ const Dedication = () => {
     }
   }
 
+  const getStatusIcon = (status) => {
+    switch (status) {
+      case 'pending': return '⏳'
+      case 'accepted': return '✅'
+      case 'completed': return '🎬'
+      case 'rejected': return '❌'
+      default: return '❓'
+    }
+  }
+
+  const stats = {
+    pending: orders.filter(o => o.status === 'pending').length,
+    accepted: orders.filter(o => o.status === 'accepted').length,
+    completed: orders.filter(o => o.status === 'completed').length,
+    rejected: orders.filter(o => o.status === 'rejected').length,
+    total: orders.length
+  }
+
+  if (loading && activeTab === 'artists') {
+    return (
+      <Container>
+        <Header title="Dédicace" showProfile />
+        <LoadingSpinner>
+          <div>Chargement des artistes...</div>
+        </LoadingSpinner>
+        <BottomNavigation />
+      </Container>
+    )
+  }
+
   return (
     <Container>
       <Header title="Dédicace" showProfile />
@@ -406,6 +506,23 @@ const Dedication = () => {
         <Title>Dédicace</Title>
         <Subtitle>Fais-toi dédicacer par tes artistes préférés</Subtitle>
       </HeaderSection>
+      
+      {activeTab === 'orders' && orders.length > 0 && (
+        <StatsBar>
+          <StatBadge bg="#FFB44420">
+            {getStatusIcon('pending')} En attente: {stats.pending}
+          </StatBadge>
+          <StatBadge bg="#00C85120">
+            {getStatusIcon('accepted')} Acceptées: {stats.accepted}
+          </StatBadge>
+          <StatBadge bg="#33B5E520">
+            {getStatusIcon('completed')} Livrées: {stats.completed}
+          </StatBadge>
+          <StatBadge bg="#FF444420">
+            {getStatusIcon('rejected')} Refusées: {stats.rejected}
+          </StatBadge>
+        </StatsBar>
+      )}
       
       <TabsContainer>
         <Tab
@@ -434,13 +551,9 @@ const Dedication = () => {
           </SearchBar>
           
           <ArtistsGrid>
-            {loading ? (
-              <div style={{ textAlign: 'center', padding: 40, gridColumn: 'span 2' }}>
-                Chargement...
-              </div>
-            ) : artists.length === 0 ? (
+            {artists.length === 0 ? (
               <div style={{ textAlign: 'center', padding: 40, color: '#888', gridColumn: 'span 2' }}>
-                Aucun artiste trouvé
+                {searchQuery ? 'Aucun artiste trouvé' : 'Aucun artiste disponible'}
               </div>
             ) : (
               artists.map(artist => (
@@ -468,35 +581,52 @@ const Dedication = () => {
         <OrdersList>
           {orders.length === 0 ? (
             <div style={{ textAlign: 'center', padding: 40, color: '#888' }}>
-              Aucune commande de dédicace
+              <div style={{ fontSize: 48, marginBottom: 16 }}>🎬</div>
+              <div>Aucune commande de dédicace</div>
+              <div style={{ fontSize: 13, marginTop: 8 }}>
+                Commandez votre première dédicace en cliquant sur "Artistes"
+              </div>
             </div>
           ) : (
             orders.map(order => (
               <OrderCard key={order.id}>
                 <OrderHeader>
                   <OrderArtist>
-                    @{order.artist?.username}
+                    <Avatar
+                      src={order.artist?.avatar_url}
+                      name={order.artist?.username}
+                      size={32}
+                    />
+                    <span style={{ marginLeft: 8 }}>@{order.artist?.username}</span>
                   </OrderArtist>
                   <OrderStatus status={order.status}>
-                    {getStatusText(order.status)}
+                    {getStatusIcon(order.status)} {getStatusText(order.status)}
                   </OrderStatus>
                 </OrderHeader>
-                <OrderMessage>{order.message}</OrderMessage>
+                <OrderMessage>"{order.message}"</OrderMessage>
                 <OrderDate>
-                  Demandé le {new Date(order.requested_at).toLocaleDateString()}
+                  📅 Demandé le {new Date(order.requested_at).toLocaleDateString('fr-FR', {
+                    day: 'numeric',
+                    month: 'long',
+                    year: 'numeric'
+                  })}
                 </OrderDate>
                 {order.completed_at && (
                   <OrderDate>
-                    Livré le {new Date(order.completed_at).toLocaleDateString()}
+                    ✅ Livré le {new Date(order.completed_at).toLocaleDateString('fr-FR', {
+                      day: 'numeric',
+                      month: 'long',
+                      year: 'numeric'
+                    })}
                   </OrderDate>
                 )}
                 {order.video_url && (
                   <Button
                     variant="outline"
                     style={{ marginTop: 12 }}
-                    onClick={() => window.open(order.video_url)}
+                    onClick={() => window.open(order.video_url, '_blank')}
                   >
-                    Voir la dédicace
+                    🎬 Voir la dédicace
                   </Button>
                 )}
               </OrderCard>
@@ -605,8 +735,9 @@ const Dedication = () => {
               <Button
                 fullWidth
                 onClick={handleSubmit}
+                disabled={submitting}
               >
-                Commander - 29,99€
+                {submitting ? 'Commande en cours...' : 'Commander - 29,99€'}
               </Button>
             </ModalFooter>
           </ModalContent>

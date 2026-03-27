@@ -1,5 +1,5 @@
 // src/modules/seller/pages/ProductManagement.jsx
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import styled from 'styled-components'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Header } from '../../shared/components/layout/Header'
@@ -8,6 +8,7 @@ import { Button } from '../../shared/components/ui/Button'
 import { MusicPlayer } from '../../shared/components/layout/MusicPlayer'
 import { useAuth } from '../../shared/context/AuthContext'
 import { supabase } from '../../../config/supabase'
+import { toast } from 'react-hot-toast'
 
 const Container = styled.div`
   min-height: 100vh;
@@ -286,6 +287,14 @@ const ModalFooter = styled.div`
   gap: 12px;
 `
 
+const LoadingSpinner = styled.div`
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 40px;
+  color: ${props => props.theme.textSecondary};
+`
+
 const categories = [
   { id: 'clothing', label: 'Vêtements' },
   { id: 'music', label: 'Musique / Disques' },
@@ -316,11 +325,7 @@ const ProductManagement = () => {
   
   const { user } = useAuth()
 
-  useEffect(() => {
-    loadProducts()
-  }, [activeTab, searchQuery])
-
-  const loadProducts = async () => {
+  const loadProducts = useCallback(async () => {
     setLoading(true)
     try {
       let query = supabase
@@ -344,18 +349,31 @@ const ProductManagement = () => {
       
       if (error) throw error
       setProducts(data || [])
+      
+      console.log('📦 Produits chargés:', {
+        count: data?.length,
+        activeTab,
+        searchQuery: searchQuery || 'aucun'
+      })
     } catch (error) {
       console.error('Error loading products:', error)
+      toast.error('Erreur lors du chargement des produits')
     } finally {
       setLoading(false)
     }
-  }
+  }, [user.id, activeTab, searchQuery])
+
+  useEffect(() => {
+    loadProducts()
+  }, [loadProducts])
 
   const handleImageChange = (e) => {
     const files = Array.from(e.target.files)
     const previews = files.map(file => URL.createObjectURL(file))
     setImagePreviews(previews)
     setFormData({ ...formData, images: files })
+    
+    console.log('🖼️ Images sélectionnées:', files.map(f => f.name))
   }
 
   const uploadImages = async (files) => {
@@ -370,6 +388,13 @@ const ProductManagement = () => {
       
       if (error) throw error
       
+      // Utiliser data pour les logs
+      console.log('✅ Image uploadée:', {
+        fileName: data.path,
+        fileId: data.id,
+        filePath
+      })
+      
       const { data: { publicUrl } } = supabase.storage
         .from('media')
         .getPublicUrl(filePath)
@@ -380,7 +405,10 @@ const ProductManagement = () => {
   }
 
   const handleSubmit = async () => {
-    if (!formData.name || !formData.price) return
+    if (!formData.name || !formData.price) {
+      toast.error('Veuillez remplir tous les champs obligatoires')
+      return
+    }
     
     setUploading(true)
     try {
@@ -391,7 +419,7 @@ const ProductManagement = () => {
       
       if (editingProduct) {
         // Mettre à jour le produit
-        const { error } = await supabase
+        const { data, error } = await supabase
           .from('products')
           .update({
             name: formData.name,
@@ -401,13 +429,24 @@ const ProductManagement = () => {
             stock: parseInt(formData.stock) || 0,
             images: imageUrls.length > 0 ? imageUrls : formData.images,
             is_active: formData.is_active,
+            updated_at: new Date().toISOString()
           })
           .eq('id', editingProduct.id)
+          .select()
         
         if (error) throw error
+        
+        if (data && data[0]) {
+          console.log('✏️ Produit modifié:', {
+            productId: data[0].id,
+            name: data[0].name,
+            price: data[0].price
+          })
+          toast.success('Produit modifié avec succès')
+        }
       } else {
         // Créer un nouveau produit
-        const { error } = await supabase
+        const { data, error } = await supabase
           .from('products')
           .insert({
             seller_id: user.id,
@@ -418,9 +457,20 @@ const ProductManagement = () => {
             stock: parseInt(formData.stock) || 0,
             images: imageUrls,
             is_active: formData.is_active,
+            created_at: new Date().toISOString()
           })
+          .select()
         
         if (error) throw error
+        
+        if (data && data[0]) {
+          console.log('✨ Nouveau produit créé:', {
+            productId: data[0].id,
+            name: data[0].name,
+            price: data[0].price
+          })
+          toast.success('Produit ajouté avec succès')
+        }
       }
       
       setShowModal(false)
@@ -438,6 +488,7 @@ const ProductManagement = () => {
       loadProducts()
     } catch (error) {
       console.error('Error saving product:', error)
+      toast.error('Erreur lors de l\'enregistrement du produit')
     } finally {
       setUploading(false)
     }
@@ -456,34 +507,86 @@ const ProductManagement = () => {
     })
     setImagePreviews(product.images || [])
     setShowModal(true)
+    console.log('✏️ Édition du produit:', product.id)
   }
 
   const handleDelete = async (productId) => {
+    if (!window.confirm('Êtes-vous sûr de vouloir supprimer ce produit ? Cette action est irréversible.')) {
+      return
+    }
+    
     try {
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from('products')
         .delete()
         .eq('id', productId)
+        .select()
       
       if (error) throw error
+      
+      if (data && data[0]) {
+        console.log('🗑️ Produit supprimé:', {
+          productId: data[0].id,
+          name: data[0].name
+        })
+        toast.success('Produit supprimé avec succès')
+      }
+      
       loadProducts()
     } catch (error) {
       console.error('Error deleting product:', error)
+      toast.error('Erreur lors de la suppression du produit')
     }
   }
 
   const handleToggleActive = async (product) => {
     try {
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from('products')
-        .update({ is_active: !product.is_active })
+        .update({ 
+          is_active: !product.is_active,
+          updated_at: new Date().toISOString()
+        })
         .eq('id', product.id)
+        .select()
       
       if (error) throw error
+      
+      if (data && data[0]) {
+        console.log('🔄 Statut produit modifié:', {
+          productId: data[0].id,
+          is_active: data[0].is_active
+        })
+        toast.success(`Produit ${data[0].is_active ? 'activé' : 'désactivé'}`)
+      }
+      
       loadProducts()
     } catch (error) {
       console.error('Error toggling product:', error)
+      toast.error('Erreur lors de la modification du statut')
     }
+  }
+
+  // Calculer les statistiques
+  const stats = {
+    total: products.length,
+    active: products.filter(p => p.is_active).length,
+    inactive: products.filter(p => !p.is_active).length,
+    lowStock: products.filter(p => p.stock > 0 && p.stock < 10).length,
+    totalValue: products.reduce((sum, p) => sum + (p.price * (p.stock || 0)), 0)
+  }
+
+  if (loading) {
+    return (
+      <Container>
+        <Header title="Mes Produits" showProfile showBack />
+        <LoadingSpinner>
+          <div>Chargement de vos produits...</div>
+        </LoadingSpinner>
+        <MusicPlayer />
+        <BottomNavigation />
+      </Container>
+    )
   }
 
   return (
@@ -492,22 +595,27 @@ const ProductManagement = () => {
       
       <HeaderSection>
         <Title>Mes Produits</Title>
-        <AddButton onClick={() => {
-          setEditingProduct(null)
-          setFormData({
-            name: '',
-            description: '',
-            price: '',
-            category: '',
-            stock: '',
-            images: [],
-            is_active: true,
-          })
-          setImagePreviews([])
-          setShowModal(true)
-        }} whileTap={{ scale: 0.95 }}>
-          +
-        </AddButton>
+        <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+          <div style={{ fontSize: 12, color: '#888' }}>
+            📊 {stats.total} produits • {stats.totalValue.toLocaleString()}€
+          </div>
+          <AddButton onClick={() => {
+            setEditingProduct(null)
+            setFormData({
+              name: '',
+              description: '',
+              price: '',
+              category: '',
+              stock: '',
+              images: [],
+              is_active: true,
+            })
+            setImagePreviews([])
+            setShowModal(true)
+          }} whileTap={{ scale: 0.95 }}>
+            +
+          </AddButton>
+        </div>
       </HeaderSection>
       
       <SearchBar>
@@ -524,36 +632,36 @@ const ProductManagement = () => {
           active={activeTab === 'all'}
           onClick={() => setActiveTab('all')}
         >
-          Tous ({products.length})
+          Tous ({stats.total})
         </Tab>
         <Tab
           active={activeTab === 'active'}
           onClick={() => setActiveTab('active')}
         >
-          Actifs ({products.filter(p => p.is_active).length})
+          Actifs ({stats.active})
         </Tab>
         <Tab
           active={activeTab === 'inactive'}
           onClick={() => setActiveTab('inactive')}
         >
-          Inactifs ({products.filter(p => !p.is_active).length})
+          Inactifs ({stats.inactive})
         </Tab>
         <Tab
           active={activeTab === 'lowStock'}
           onClick={() => setActiveTab('lowStock')}
         >
-          Stock faible
+          Stock faible ({stats.lowStock})
         </Tab>
       </TabsContainer>
       
       <ProductsGrid>
-        {loading ? (
-          <div style={{ textAlign: 'center', padding: 40, gridColumn: 'span 2' }}>
-            Chargement...
-          </div>
-        ) : products.length === 0 ? (
+        {products.length === 0 ? (
           <div style={{ textAlign: 'center', padding: 40, color: '#888', gridColumn: 'span 2' }}>
-            Aucun produit
+            <div style={{ fontSize: 48, marginBottom: 16 }}>📦</div>
+            <div>Aucun produit</div>
+            <div style={{ fontSize: 13, marginTop: 8 }}>
+              Cliquez sur "+" pour ajouter votre premier produit
+            </div>
           </div>
         ) : (
           products.map(product => (
@@ -569,6 +677,7 @@ const ProductManagement = () => {
                 <ProductPrice>{product.price}€</ProductPrice>
                 <ProductStock>
                   {product.is_active ? '✅ Actif' : '⭕ Inactif'}
+                  {product.sold_count > 0 && ` • Vendus: ${product.sold_count}`}
                 </ProductStock>
                 <ProductActions>
                   <ActionButton

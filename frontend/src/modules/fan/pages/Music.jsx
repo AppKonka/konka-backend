@@ -1,5 +1,5 @@
 // src/modules/fan/pages/Music.jsx
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import styled from 'styled-components'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Header } from '../../shared/components/layout/Header'
@@ -10,6 +10,7 @@ import { MusicPlayer } from '../../shared/components/layout/MusicPlayer'
 import { useAuth } from '../../shared/context/AuthContext'
 import { usePlayer } from '../../shared/context/PlayerContext'
 import { supabase } from '../../../config/supabase'
+import { toast } from 'react-hot-toast'
 
 const Container = styled.div`
   min-height: 100vh;
@@ -104,6 +105,19 @@ const PlayButton = styled(motion.button)`
   font-size: 20px;
   cursor: pointer;
   color: ${props => props.theme.primary};
+`
+
+const AddToQueueButton = styled(motion.button)`
+  background: none;
+  border: none;
+  font-size: 16px;
+  cursor: pointer;
+  color: ${props => props.theme.textSecondary};
+  margin-right: 8px;
+  
+  &:hover {
+    color: ${props => props.theme.primary};
+  }
 `
 
 const TrendingGrid = styled.div`
@@ -201,6 +215,14 @@ const ArtistFollowers = styled.p`
   color: ${props => props.theme.textSecondary};
 `
 
+const LoadingSpinner = styled.div`
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 40px;
+  color: ${props => props.theme.textSecondary};
+`
+
 const Music = () => {
   const [activeTab, setActiveTab] = useState('forYou')
   const [tracks, setTracks] = useState([])
@@ -212,30 +234,7 @@ const Music = () => {
   const { user } = useAuth()
   const { playTrack, addToQueue, currentTrack, isPlaying, pauseTrack, resumeTrack } = usePlayer()
 
-  useEffect(() => {
-    loadData()
-  }, [activeTab])
-
-  const loadData = async () => {
-    setLoading(true)
-    try {
-      if (activeTab === 'forYou') {
-        await loadForYou()
-      } else if (activeTab === 'trending') {
-        await loadTrending()
-      } else if (activeTab === 'playlists') {
-        await loadPlaylists()
-      } else if (activeTab === 'artists') {
-        await loadArtists()
-      }
-    } catch (error) {
-      console.error('Error loading music data:', error)
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const loadForYou = async () => {
+  const loadForYou = useCallback(async () => {
     // Charger les suggestions du jour
     const { data: suggestions } = await supabase
       .from('tracks')
@@ -279,9 +278,15 @@ const Music = () => {
       newReleases: newReleases || [],
       recommendations: recommendations || [],
     })
-  }
+    
+    console.log('🎵 For You chargé:', {
+      suggestions: suggestions?.length,
+      newReleases: newReleases?.length,
+      recommendations: recommendations?.length
+    })
+  }, [user.id])
 
-  const loadTrending = async () => {
+  const loadTrending = useCallback(async () => {
     const { data } = await supabase
       .from('tracks')
       .select(`
@@ -292,9 +297,10 @@ const Music = () => {
       .limit(20)
     
     setTrending(data || [])
-  }
+    console.log('📈 Tendances chargées:', data?.length)
+  }, [])
 
-  const loadPlaylists = async () => {
+  const loadPlaylists = useCallback(async () => {
     // Playlists personnelles
     const { data: userPlaylists } = await supabase
       .from('playlists')
@@ -313,9 +319,14 @@ const Music = () => {
       user: userPlaylists || [],
       official: officialPlaylists || [],
     })
-  }
+    
+    console.log('📀 Playlists chargées:', {
+      user: userPlaylists?.length,
+      official: officialPlaylists?.length
+    })
+  }, [user.id])
 
-  const loadArtists = async () => {
+  const loadArtists = useCallback(async () => {
     // Artistes favoris
     const { data: follows } = await supabase
       .from('follows')
@@ -347,7 +358,36 @@ const Music = () => {
       favorite: favoriteArtists || [],
       trending: trendingArtists || [],
     })
-  }
+    
+    console.log('🎤 Artistes chargés:', {
+      favorite: favoriteArtists?.length,
+      trending: trendingArtists?.length
+    })
+  }, [user.id])
+
+  const loadData = useCallback(async () => {
+    setLoading(true)
+    try {
+      if (activeTab === 'forYou') {
+        await loadForYou()
+      } else if (activeTab === 'trending') {
+        await loadTrending()
+      } else if (activeTab === 'playlists') {
+        await loadPlaylists()
+      } else if (activeTab === 'artists') {
+        await loadArtists()
+      }
+    } catch (error) {
+      console.error('Error loading music data:', error)
+      toast.error('Erreur lors du chargement')
+    } finally {
+      setLoading(false)
+    }
+  }, [activeTab, loadForYou, loadTrending, loadPlaylists, loadArtists])
+
+  useEffect(() => {
+    loadData()
+  }, [loadData])
 
   const handlePlayTrack = (track) => {
     if (currentTrack?.id === track.id && isPlaying) {
@@ -357,6 +397,13 @@ const Music = () => {
     } else {
       playTrack(track)
     }
+    console.log('▶️ Lecture:', track.title)
+  }
+
+  const handleAddToQueue = (track) => {
+    addToQueue(track)
+    toast.success(`"${track.title}" ajouté à la file d'attente`)
+    console.log('➕ Ajouté à la file:', track.title)
   }
 
   const formatDuration = (seconds) => {
@@ -364,6 +411,19 @@ const Music = () => {
     const mins = Math.floor(seconds / 60)
     const secs = seconds % 60
     return `${mins}:${secs.toString().padStart(2, '0')}`
+  }
+
+  if (loading) {
+    return (
+      <Container>
+        <Header title="Musique" showProfile />
+        <LoadingSpinner>
+          <div>Chargement de votre musique...</div>
+        </LoadingSpinner>
+        <MusicPlayer />
+        <BottomNavigation />
+      </Container>
+    )
   }
 
   return (
@@ -406,7 +466,7 @@ const Music = () => {
             exit={{ opacity: 0 }}
           >
             <ForYouSection>
-              {!loading && tracks.suggestions && (
+              {tracks.suggestions && tracks.suggestions.length > 0 && (
                 <DailySuggestions>
                   <SectionTitle>Suggestions du jour</SectionTitle>
                   <TrackList>
@@ -422,6 +482,14 @@ const Music = () => {
                           <TrackArtist>{track.artist?.username}</TrackArtist>
                         </TrackInfo>
                         <TrackDuration>{formatDuration(track.duration)}</TrackDuration>
+                        <AddToQueueButton
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            handleAddToQueue(track)
+                          }}
+                        >
+                          ➕
+                        </AddToQueueButton>
                         <PlayButton>
                           {currentTrack?.id === track.id && isPlaying ? '⏸️' : '▶️'}
                         </PlayButton>
@@ -431,7 +499,7 @@ const Music = () => {
                 </DailySuggestions>
               )}
               
-              {!loading && tracks.newReleases && tracks.newReleases.length > 0 && (
+              {tracks.newReleases && tracks.newReleases.length > 0 && (
                 <div>
                   <SectionTitle>Nouveautés de vos artistes</SectionTitle>
                   <TrackList>
@@ -447,6 +515,14 @@ const Music = () => {
                           <TrackArtist>{track.artist?.username}</TrackArtist>
                         </TrackInfo>
                         <TrackDuration>{formatDuration(track.duration)}</TrackDuration>
+                        <AddToQueueButton
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            handleAddToQueue(track)
+                          }}
+                        >
+                          ➕
+                        </AddToQueueButton>
                         <PlayButton>
                           {currentTrack?.id === track.id && isPlaying ? '⏸️' : '▶️'}
                         </PlayButton>

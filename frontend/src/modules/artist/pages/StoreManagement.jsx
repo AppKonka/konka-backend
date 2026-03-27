@@ -1,5 +1,5 @@
 // src/modules/artist/pages/StoreManagement.jsx
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import styled from 'styled-components'
 import { motion } from 'framer-motion'
@@ -56,6 +56,12 @@ const ProductCard = styled(motion.div)`
   border-radius: 16px;
   overflow: hidden;
   box-shadow: ${props => props.theme.shadow.sm};
+  cursor: pointer;
+  transition: transform 0.2s ease;
+  
+  &:hover {
+    transform: translateY(-4px);
+  }
 `
 
 const ProductImage = styled.img`
@@ -81,6 +87,14 @@ const ProductPrice = styled.div`
   color: ${props => props.theme.primary};
 `
 
+const ProductStats = styled.div`
+  display: flex;
+  gap: 12px;
+  margin-top: 8px;
+  font-size: 11px;
+  color: ${props => props.theme.textSecondary};
+`
+
 const EmptyState = styled.div`
   text-align: center;
   padding: 60px 20px;
@@ -92,17 +106,51 @@ const EmptyState = styled.div`
   }
 `
 
+const LoadingSpinner = styled.div`
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 40px;
+  color: ${props => props.theme.textSecondary};
+`
+
+const StatsBar = styled.div`
+  display: flex;
+  gap: 16px;
+  margin: 0 16px 16px;
+  padding: 12px;
+  background: ${props => props.theme.surface};
+  border-radius: 12px;
+  justify-content: space-around;
+`
+
+const StatItem = styled.div`
+  text-align: center;
+`
+
+const StatValue = styled.div`
+  font-size: 18px;
+  font-weight: 700;
+  color: ${props => props.theme.primary};
+`
+
+const StatLabel = styled.div`
+  font-size: 11px;
+  color: ${props => props.theme.textSecondary};
+`
+
 const StoreManagement = () => {
   const navigate = useNavigate()
   const { user } = useAuth()
   const [products, setProducts] = useState([])
   const [loading, setLoading] = useState(true)
+  const [stats, setStats] = useState({
+    totalProducts: 0,
+    totalValue: 0,
+    totalSales: 0
+  })
 
-  useEffect(() => {
-    loadProducts()
-  }, [])
-
-  const loadProducts = async () => {
+  const loadProducts = useCallback(async () => {
     setLoading(true)
     try {
       const { data, error } = await supabase
@@ -112,23 +160,67 @@ const StoreManagement = () => {
         .order('created_at', { ascending: false })
       
       if (error) throw error
+      
       setProducts(data || [])
+      
+      // Calculer les statistiques
+      const totalValue = (data || []).reduce((sum, p) => sum + (p.price * (p.stock || 0)), 0)
+      const totalSales = (data || []).reduce((sum, p) => sum + (p.sold_count || 0), 0)
+      
+      setStats({
+        totalProducts: data?.length || 0,
+        totalValue: totalValue,
+        totalSales: totalSales
+      })
+      
+      console.log('✅ Produits chargés:', {
+        count: data?.length || 0,
+        totalValue: totalValue,
+        totalSales: totalSales,
+        timestamp: new Date().toISOString()
+      })
+      
+      toast.success(`${data?.length || 0} produit(s) chargé(s)`)
     } catch (error) {
       console.error('Error loading products:', error)
+      toast.error('Erreur lors du chargement des produits')
     } finally {
       setLoading(false)
     }
-  }
+  }, [user.id])
+
+  useEffect(() => {
+    loadProducts()
+  }, [loadProducts])
 
   const handleAddProduct = () => {
+    console.log('➕ Ajout d\'un nouveau produit')
     navigate('/seller/products')
+  }
+
+  const handleProductClick = (product) => {
+    console.log('🛍️ Affichage du produit:', {
+      id: product.id,
+      name: product.name,
+      price: product.price
+    })
+    navigate(`/seller/products/${product.id}`)
+  }
+
+  const formatNumber = (num) => {
+    if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M'
+    if (num >= 1000) return (num / 1000).toFixed(1) + 'k'
+    return num?.toString() || '0'
   }
 
   if (loading) {
     return (
       <Container>
         <Header title="Ma boutique" showBack />
-        <div style={{ textAlign: 'center', padding: 40 }}>Chargement...</div>
+        <LoadingSpinner>
+          <div>Chargement de votre boutique...</div>
+        </LoadingSpinner>
+        <MusicPlayer />
         <BottomNavigation />
       </Container>
     )
@@ -145,10 +237,30 @@ const StoreManagement = () => {
         </AddButton>
       </HeaderSection>
       
+      {products.length > 0 && (
+        <StatsBar>
+          <StatItem>
+            <StatValue>{stats.totalProducts}</StatValue>
+            <StatLabel>Produits</StatLabel>
+          </StatItem>
+          <StatItem>
+            <StatValue>{formatNumber(stats.totalValue)}€</StatValue>
+            <StatLabel>Valeur stock</StatLabel>
+          </StatItem>
+          <StatItem>
+            <StatValue>{formatNumber(stats.totalSales)}</StatValue>
+            <StatLabel>Ventes totales</StatLabel>
+          </StatItem>
+        </StatsBar>
+      )}
+      
       {products.length === 0 ? (
         <EmptyState>
           <div className="icon">🛍️</div>
           <div>Aucun produit dans votre boutique</div>
+          <div style={{ fontSize: 13, marginTop: 8 }}>
+            Cliquez sur le bouton "+" pour ajouter votre premier produit
+          </div>
           <Button onClick={handleAddProduct} style={{ marginTop: 20 }}>
             Ajouter un produit
           </Button>
@@ -158,13 +270,23 @@ const StoreManagement = () => {
           {products.map(product => (
             <ProductCard
               key={product.id}
-              onClick={() => navigate(`/seller/products/${product.id}`)}
+              onClick={() => handleProductClick(product)}
               whileTap={{ scale: 0.98 }}
             >
               <ProductImage src={product.images?.[0] || '/images/default-product.jpg'} />
               <ProductInfo>
                 <ProductName>{product.name}</ProductName>
                 <ProductPrice>{product.price}€</ProductPrice>
+                <ProductStats>
+                  {product.stock > 0 ? (
+                    <span>📦 Stock: {product.stock}</span>
+                  ) : (
+                    <span style={{ color: '#FF4444' }}>⚠️ Rupture</span>
+                  )}
+                  {product.sold_count > 0 && (
+                    <span>📈 Vendus: {product.sold_count}</span>
+                  )}
+                </ProductStats>
               </ProductInfo>
             </ProductCard>
           ))}

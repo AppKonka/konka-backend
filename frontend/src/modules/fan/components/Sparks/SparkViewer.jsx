@@ -1,10 +1,11 @@
 // src/modules/fan/components/Sparks/SparkViewer.jsx
-import React, { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect, useRef, useCallback } from 'react'
 import styled from 'styled-components'
 import { motion, AnimatePresence } from 'framer-motion'
 import ReactPlayer from 'react-player'
 import { Avatar } from '../../../shared/components/ui/Avatar'
 import { supabase } from '../../../../config/supabase'
+import { toast } from 'react-hot-toast'
 
 const Container = styled(motion.div)`
   position: fixed;
@@ -90,6 +91,24 @@ const ReplyButton = styled(motion.button)`
   z-index: 10;
 `
 
+const RepostButton = styled(motion.button)`
+  position: absolute;
+  bottom: 30px;
+  right: 20px;
+  padding: 12px 20px;
+  border-radius: 30px;
+  background: rgba(255,255,255,0.2);
+  border: none;
+  color: white;
+  font-size: 14px;
+  cursor: pointer;
+  backdrop-filter: blur(10px);
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+`
+
 const CloseButton = styled(motion.button)`
   position: absolute;
   top: 20px;
@@ -106,44 +125,43 @@ const SparkViewer = ({ sparks, initialIndex = 0, onClose, onReply, onRepost }) =
   const [currentIndex, setCurrentIndex] = useState(initialIndex)
   const [progress, setProgress] = useState(0)
   const [isPaused, setIsPaused] = useState(false)
-  const [duration, setDuration] = useState(0)
+  const [sparkDuration, setSparkDuration] = useState(15)
   
   const containerRef = useRef(null)
   const videoRef = useRef(null)
   const timerRef = useRef(null)
+  const startTimeRef = useRef(null)
 
   const currentSpark = sparks[currentIndex]
 
-  useEffect(() => {
-    startTimer()
-    
-    return () => {
-      if (timerRef.current) clearInterval(timerRef.current)
+  const nextSpark = useCallback(() => {
+    if (currentIndex < sparks.length - 1) {
+      setCurrentIndex(prev => prev + 1)
+    } else {
+      onClose()
+    }
+  }, [currentIndex, sparks.length, onClose])
+
+  const prevSpark = useCallback(() => {
+    if (currentIndex > 0) {
+      setCurrentIndex(prev => prev - 1)
     }
   }, [currentIndex])
 
-  useEffect(() => {
-    if (!isPaused) {
-      startTimer()
-    } else {
-      if (timerRef.current) clearInterval(timerRef.current)
-    }
-  }, [isPaused])
-
-  const startTimer = () => {
+  const startTimer = useCallback(() => {
     if (timerRef.current) clearInterval(timerRef.current)
     
-    const sparkDuration = currentSpark?.duration_minutes * 60 || 15
-    setDuration(sparkDuration)
+    const duration = currentSpark?.duration_minutes * 60 || 15
+    setSparkDuration(duration)
     setProgress(0)
     
-    const startTime = Date.now()
+    startTimeRef.current = Date.now()
     
     timerRef.current = setInterval(() => {
       if (isPaused) return
       
-      const elapsed = (Date.now() - startTime) / 1000
-      const newProgress = (elapsed / sparkDuration) * 100
+      const elapsed = (Date.now() - startTimeRef.current) / 1000
+      const newProgress = (elapsed / duration) * 100
       
       if (newProgress >= 100) {
         nextSpark()
@@ -151,23 +169,15 @@ const SparkViewer = ({ sparks, initialIndex = 0, onClose, onReply, onRepost }) =
         setProgress(newProgress)
       }
     }, 100)
+  }, [currentSpark, isPaused, nextSpark])
+
+  const formatDuration = (seconds) => {
+    const mins = Math.floor(seconds / 60)
+    const secs = seconds % 60
+    return `${mins}:${secs.toString().padStart(2, '0')}`
   }
 
-  const nextSpark = () => {
-    if (currentIndex < sparks.length - 1) {
-      setCurrentIndex(currentIndex + 1)
-    } else {
-      onClose()
-    }
-  }
-
-  const prevSpark = () => {
-    if (currentIndex > 0) {
-      setCurrentIndex(currentIndex - 1)
-    }
-  }
-
-  const handleTap = (e) => {
+  const handleTap = useCallback((e) => {
     const rect = containerRef.current.getBoundingClientRect()
     const x = e.clientX - rect.left
     const width = rect.width
@@ -177,19 +187,92 @@ const SparkViewer = ({ sparks, initialIndex = 0, onClose, onReply, onRepost }) =
     } else if (x > (width * 2) / 3) {
       nextSpark()
     } else {
-      setIsPaused(!isPaused)
+      setIsPaused(prev => !prev)
     }
-  }
+  }, [prevSpark, nextSpark])
 
-  const handleReply = () => {
+  const handleReply = useCallback(() => {
     onReply?.(currentSpark)
     onClose()
-  }
+  }, [currentSpark, onReply, onClose])
 
-  const handleRepost = () => {
-    onRepost?.(currentSpark)
-    onClose()
-  }
+  const handleRepost = useCallback(async () => {
+    try {
+      // Marquer le spark comme reposté
+      const { data, error } = await supabase
+        .from('spark_reposts')
+        .insert({
+          user_id: currentSpark.user_id,
+          spark_id: currentSpark.id,
+          reposted_by: currentSpark.user_id,
+          created_at: new Date().toISOString()
+        })
+        .select()
+      
+      if (error) throw error
+      
+      if (data) {
+        console.log('🔄 Spark reposté avec succès:', {
+          sparkId: currentSpark.id,
+          repostId: data[0].id
+        })
+      }
+      
+      onRepost?.(currentSpark)
+      toast.success('Spark reposté avec succès !')
+      onClose()
+    } catch (error) {
+      console.error('Error reposting spark:', error)
+      toast.error('Erreur lors du repost')
+    }
+  }, [currentSpark, onRepost, onClose])
+
+  useEffect(() => {
+    startTimer()
+    
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current)
+    }
+  }, [currentIndex, startTimer])
+
+  useEffect(() => {
+    if (!isPaused) {
+      // Redémarrer le timer avec le temps restant
+      if (timerRef.current) clearInterval(timerRef.current)
+      startTimer()
+    } else {
+      if (timerRef.current) clearInterval(timerRef.current)
+    }
+  }, [isPaused, startTimer])
+
+  // Marquer le spark comme vu dans la base de données
+  useEffect(() => {
+    const markAsViewed = async () => {
+      if (currentSpark && currentSpark.id) {
+        try {
+          const { error } = await supabase
+            .from('spark_views')
+            .insert({
+              spark_id: currentSpark.id,
+              user_id: currentSpark.user_id,
+              viewed_at: new Date().toISOString()
+            })
+          
+          if (error) throw error
+          
+          console.log('👁️ Spark marqué comme vu:', {
+            sparkId: currentSpark.id,
+            duration: sparkDuration,
+            durationFormatted: formatDuration(sparkDuration)
+          })
+        } catch (error) {
+          console.error('Error marking spark as viewed:', error)
+        }
+      }
+    }
+    
+    markAsViewed()
+  }, [currentSpark, sparkDuration])
 
   if (!currentSpark) return null
 
@@ -223,7 +306,7 @@ const SparkViewer = ({ sparks, initialIndex = 0, onClose, onReply, onRepost }) =
               @{currentSpark.user?.username}
             </div>
             <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.7)' }}>
-              {new Date(currentSpark.created_at).toLocaleTimeString()}
+              {new Date(currentSpark.created_at).toLocaleTimeString()} • {formatDuration(sparkDuration)}
             </div>
           </div>
         </UserInfo>
@@ -258,6 +341,10 @@ const SparkViewer = ({ sparks, initialIndex = 0, onClose, onReply, onRepost }) =
       <ReplyButton onClick={handleReply} whileTap={{ scale: 0.95 }}>
         💬 Répondre
       </ReplyButton>
+      
+      <RepostButton onClick={handleRepost} whileTap={{ scale: 0.95 }}>
+        🔄 Reposter
+      </RepostButton>
     </Container>
   )
 }

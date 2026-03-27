@@ -1,5 +1,5 @@
 // src/modules/seller/pages/OrderManagement.jsx
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import styled from 'styled-components'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Header } from '../../shared/components/layout/Header'
@@ -9,6 +9,7 @@ import { Button } from '../../shared/components/ui/Button'
 import { MusicPlayer } from '../../shared/components/layout/MusicPlayer'
 import { useAuth } from '../../shared/context/AuthContext'
 import { supabase } from '../../../config/supabase'
+import { toast } from 'react-hot-toast'
 
 const Container = styled.div`
   min-height: 100vh;
@@ -32,6 +33,31 @@ const Title = styled.h1`
 
 const Subtitle = styled.p`
   font-size: 14px;
+  color: ${props => props.theme.textSecondary};
+`
+
+const StatsBar = styled.div`
+  display: flex;
+  gap: 16px;
+  margin: 0 16px 16px;
+  padding: 12px;
+  background: ${props => props.theme.surface};
+  border-radius: 12px;
+  justify-content: space-around;
+`
+
+const StatItem = styled.div`
+  text-align: center;
+`
+
+const StatValue = styled.div`
+  font-size: 18px;
+  font-weight: 700;
+  color: ${props => props.theme.primary};
+`
+
+const StatLabel = styled.div`
+  font-size: 11px;
   color: ${props => props.theme.textSecondary};
 `
 
@@ -266,6 +292,25 @@ const tabs = [
   { id: 'disputed', label: 'Litiges' },
 ]
 
+const LoadingSpinner = styled.div`
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 40px;
+  color: ${props => props.theme.textSecondary};
+`
+
+const EmptyState = styled.div`
+  text-align: center;
+  padding: 60px 20px;
+  color: ${props => props.theme.textSecondary};
+  
+  .icon {
+    font-size: 48px;
+    margin-bottom: 16px;
+  }
+`
+
 const OrderManagement = () => {
   const [activeTab, setActiveTab] = useState('all')
   const [orders, setOrders] = useState([])
@@ -276,29 +321,28 @@ const OrderManagement = () => {
   
   const { user } = useAuth()
 
-  useEffect(() => {
-    loadOrders()
-  }, [activeTab])
-
-  const loadOrders = async () => {
+  const loadOrders = useCallback(async () => {
     setLoading(true)
     try {
       // Récupérer les produits du vendeur
-      const { data: products } = await supabase
+      const { data: products, error: productsError } = await supabase
         .from('products')
         .select('id')
         .eq('seller_id', user.id)
+      
+      if (productsError) throw productsError
       
       const productIds = products?.map(p => p.id) || []
       
       if (productIds.length === 0) {
         setOrders([])
         setLoading(false)
+        console.log('📦 Aucun produit trouvé pour ce vendeur')
         return
       }
       
       // Récupérer les order_items avec les produits du vendeur
-      const { data: orderItems } = await supabase
+      const { data: orderItems, error: itemsError } = await supabase
         .from('order_items')
         .select(`
           *,
@@ -307,7 +351,9 @@ const OrderManagement = () => {
         `)
         .in('product_id', productIds)
       
-      if (orderItems) {
+      if (itemsError) throw itemsError
+      
+      if (orderItems && orderItems.length > 0) {
         // Regrouper par order_id
         const ordersMap = new Map()
         orderItems.forEach(item => {
@@ -337,26 +383,46 @@ const OrderManagement = () => {
         ordersArray.sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
         
         setOrders(ordersArray)
+        
+        console.log('📦 Commandes chargées:', {
+          total: ordersArray.length,
+          activeTab,
+          productCount: productIds.length
+        })
+      } else {
+        setOrders([])
       }
     } catch (error) {
       console.error('Error loading orders:', error)
+      toast.error('Erreur lors du chargement des commandes')
     } finally {
       setLoading(false)
     }
-  }
+  }, [user.id, activeTab])
+
+  useEffect(() => {
+    loadOrders()
+  }, [loadOrders])
 
   const handleUpdateStatus = async (orderId, status) => {
     try {
       const { error } = await supabase
         .from('orders')
-        .update({ status })
+        .update({ 
+          status,
+          updated_at: new Date().toISOString()
+        })
         .eq('id', orderId)
+        .select()
       
       if (error) throw error
       
+      toast.success(`Commande ${status === 'confirmed' ? 'confirmée' : status === 'delivered' ? 'marquée livrée' : 'mise à jour'}`)
+      console.log('📦 Statut commande mis à jour:', { orderId, status })
       loadOrders()
     } catch (error) {
       console.error('Error updating order status:', error)
+      toast.error('Erreur lors de la mise à jour')
     }
   }
 
@@ -369,10 +435,19 @@ const OrderManagement = () => {
         .update({
           status: 'shipped',
           tracking_number: trackingNumber,
+          shipped_at: new Date().toISOString()
         })
         .eq('id', selectedOrder.id)
+        .select()
       
       if (error) throw error
+      
+      toast.success(`Commande #${selectedOrder.id.slice(-8)} expédiée avec succès`)
+      console.log('📦 Commande expédiée:', {
+        orderId: selectedOrder.id,
+        trackingNumber,
+        shippedAt: new Date().toISOString()
+      })
       
       setShowTrackingModal(false)
       setTrackingNumber('')
@@ -380,6 +455,7 @@ const OrderManagement = () => {
       loadOrders()
     } catch (error) {
       console.error('Error shipping order:', error)
+      toast.error('Erreur lors de l\'expédition')
     }
   }
 
@@ -388,7 +464,7 @@ const OrderManagement = () => {
       day: 'numeric',
       month: 'long',
       hour: '2-digit',
-      minute: '2-digit',
+      minute: '2-digit'
     })
   }
 
@@ -403,6 +479,30 @@ const OrderManagement = () => {
     }
   }
 
+  // Calculer les statistiques
+  const stats = {
+    total: orders.length,
+    pending: orders.filter(o => o.status === 'pending').length,
+    confirmed: orders.filter(o => o.status === 'confirmed').length,
+    shipped: orders.filter(o => o.status === 'shipped').length,
+    delivered: orders.filter(o => o.status === 'delivered').length,
+    disputed: orders.filter(o => o.status === 'disputed').length,
+    totalRevenue: orders.reduce((sum, o) => sum + (o.total_amount || 0), 0)
+  }
+
+  if (loading) {
+    return (
+      <Container>
+        <Header title="Commandes" showProfile showBack />
+        <LoadingSpinner>
+          <div>Chargement des commandes...</div>
+        </LoadingSpinner>
+        <MusicPlayer />
+        <BottomNavigation />
+      </Container>
+    )
+  }
+
   return (
     <Container>
       <Header title="Commandes" showProfile showBack />
@@ -411,6 +511,27 @@ const OrderManagement = () => {
         <Title>Commandes</Title>
         <Subtitle>Gérez les commandes de vos clients</Subtitle>
       </HeaderSection>
+      
+      {orders.length > 0 && (
+        <StatsBar>
+          <StatItem>
+            <StatValue>{stats.total}</StatValue>
+            <StatLabel>Total</StatLabel>
+          </StatItem>
+          <StatItem>
+            <StatValue>{stats.pending}</StatValue>
+            <StatLabel>En attente</StatLabel>
+          </StatItem>
+          <StatItem>
+            <StatValue>{stats.shipped}</StatValue>
+            <StatLabel>Expédiées</StatLabel>
+          </StatItem>
+          <StatItem>
+            <StatValue>{stats.totalRevenue.toLocaleString()}€</StatValue>
+            <StatLabel>Chiffre d'affaires</StatLabel>
+          </StatItem>
+        </StatsBar>
+      )}
       
       <TabsContainer>
         {tabs.map(tab => (
@@ -422,7 +543,7 @@ const OrderManagement = () => {
             {tab.label}
             {tab.id !== 'all' && (
               <span style={{ marginLeft: 4 }}>
-                ({orders.filter(o => o.status === tab.id).length})
+                ({stats[tab.id] || 0})
               </span>
             )}
           </Tab>
@@ -430,12 +551,19 @@ const OrderManagement = () => {
       </TabsContainer>
       
       <OrdersList>
-        {loading ? (
-          <div style={{ textAlign: 'center', padding: 40 }}>Chargement...</div>
-        ) : orders.length === 0 ? (
-          <div style={{ textAlign: 'center', padding: 40, color: '#888' }}>
-            Aucune commande
-          </div>
+        {orders.length === 0 ? (
+          <EmptyState>
+            <div className="icon">📦</div>
+            <div>Aucune commande</div>
+            <div style={{ fontSize: 13, marginTop: 8 }}>
+              {activeTab === 'all' && "Les commandes apparaîtront ici une fois que vous aurez des ventes"}
+              {activeTab === 'pending' && "Aucune commande en attente"}
+              {activeTab === 'confirmed' && "Aucune commande confirmée"}
+              {activeTab === 'shipped' && "Aucune commande expédiée"}
+              {activeTab === 'delivered' && "Aucune commande livrée"}
+              {activeTab === 'disputed' && "Aucun litige en cours"}
+            </div>
+          </EmptyState>
         ) : (
           orders.map(order => (
             <OrderCard key={order.id}>
@@ -521,7 +649,7 @@ const OrderManagement = () => {
                 )}
                 
                 <ActionButton
-                  onClick={() => window.open(`/chat/${order.buyer_id}`)}
+                  onClick={() => window.open(`/chat/${order.buyer_id}`, '_blank')}
                   whileTap={{ scale: 0.95 }}
                 >
                   💬 Contacter
@@ -562,6 +690,9 @@ const OrderManagement = () => {
                 value={trackingNumber}
                 onChange={(e) => setTrackingNumber(e.target.value)}
               />
+              <p style={{ fontSize: 12, color: '#888', marginTop: 8 }}>
+                Vous pourrez ajouter un numéro de suivi plus tard
+              </p>
             </ModalBody>
             
             <ModalFooter>

@@ -1,5 +1,5 @@
 // src/modules/fan/pages/Shopping.jsx
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import styled from 'styled-components'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Header } from '../../shared/components/layout/Header'
@@ -8,6 +8,7 @@ import { Avatar } from '../../shared/components/ui/Avatar'
 import { Button } from '../../shared/components/ui/Button'
 import { useAuth } from '../../shared/context/AuthContext'
 import { supabase } from '../../../config/supabase'
+import { toast } from 'react-hot-toast'
 
 const Container = styled.div`
   min-height: 100vh;
@@ -242,6 +243,32 @@ const GPSButton = styled(motion.button)`
   z-index: 20;
 `
 
+const CartIndicator = styled(motion.div)`
+  position: fixed;
+  bottom: 90px;
+  left: 20px;
+  background: ${props => props.theme.primary};
+  color: white;
+  padding: 8px 12px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  box-shadow: ${props => props.theme.shadow.md};
+  z-index: 20;
+`
+
+const LoadingSpinner = styled.div`
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 40px;
+  color: ${props => props.theme.textSecondary};
+`
+
 const categories = [
   { id: 'all', label: 'Tous' },
   { id: 'clothing', label: 'Vêtements' },
@@ -255,6 +282,7 @@ const Shopping = () => {
   const [activeCategory, setActiveCategory] = useState('all')
   const [products, setProducts] = useState([])
   const [cart, setCart] = useState([])
+  const [cartCount, setCartCount] = useState(0)
   const [favorites, setFavorites] = useState([])
   const [searchQuery, setSearchQuery] = useState('')
   const [isListening, setIsListening] = useState(false)
@@ -263,13 +291,7 @@ const Shopping = () => {
   
   const { user } = useAuth()
 
-  useEffect(() => {
-    loadProducts()
-    loadCart()
-    loadFavorites()
-  }, [activeCategory, searchQuery])
-
-  const loadProducts = async () => {
+  const loadProducts = useCallback(async () => {
     setLoading(true)
     try {
       let query = supabase
@@ -292,28 +314,39 @@ const Shopping = () => {
       
       if (error) throw error
       setProducts(data || [])
+      console.log('🛍️ Produits chargés:', data?.length)
     } catch (error) {
       console.error('Error loading products:', error)
+      toast.error('Erreur lors du chargement des produits')
     } finally {
       setLoading(false)
     }
-  }
+  }, [activeCategory, searchQuery])
 
-  const loadCart = async () => {
+  const loadCart = useCallback(async () => {
+    if (!user) return
+    
     try {
       const { data, error } = await supabase
         .from('cart_items')
-        .select('*')
+        .select('*, product:products(*)')
         .eq('user_id', user.id)
       
       if (error) throw error
       setCart(data || [])
+      
+      const totalItems = data?.reduce((sum, item) => sum + item.quantity, 0) || 0
+      setCartCount(totalItems)
+      
+      console.log('🛒 Panier chargé:', totalItems, 'articles')
     } catch (error) {
       console.error('Error loading cart:', error)
     }
-  }
+  }, [user])
 
-  const loadFavorites = async () => {
+  const loadFavorites = useCallback(async () => {
+    if (!user) return
+    
     try {
       const { data, error } = await supabase
         .from('favorites')
@@ -322,31 +355,71 @@ const Shopping = () => {
       
       if (error) throw error
       setFavorites(data?.map(f => f.product_id) || [])
+      
+      console.log('❤️ Favoris chargés:', data?.length)
     } catch (error) {
       console.error('Error loading favorites:', error)
     }
-  }
+  }, [user])
+
+  useEffect(() => {
+    loadProducts()
+    loadCart()
+    loadFavorites()
+  }, [loadProducts, loadCart, loadFavorites])
 
   const handleAddToCart = async (product) => {
+    if (!user) {
+      toast.error('Connectez-vous pour ajouter au panier')
+      return
+    }
+    
     try {
-      const { error } = await supabase
-        .from('cart_items')
-        .insert({
-          user_id: user.id,
-          product_id: product.id,
-          quantity: 1,
-          price: product.price,
-        })
+      // Vérifier si le produit est déjà dans le panier
+      const existingItem = cart.find(item => item.product_id === product.id)
       
-      if (error) throw error
+      if (existingItem) {
+        const { error } = await supabase
+          .from('cart_items')
+          .update({ quantity: existingItem.quantity + 1 })
+          .eq('id', existingItem.id)
+        
+        if (error) throw error
+        toast.success(`Quantité augmentée pour "${product.name}"`)
+        console.log('🛒 Quantité augmentée:', product.id)
+      } else {
+        const { data, error } = await supabase
+          .from('cart_items')
+          .insert({
+            user_id: user.id,
+            product_id: product.id,
+            quantity: 1,
+            price: product.price,
+            created_at: new Date().toISOString()
+          })
+          .select()
+        
+        if (error) throw error
+        toast.success(`"${product.name}" ajouté au panier`)
+        console.log('🛒 Produit ajouté au panier:', {
+          productId: product.id,
+          cartId: data?.[0]?.id
+        })
+      }
       
       loadCart()
     } catch (error) {
       console.error('Error adding to cart:', error)
+      toast.error('Erreur lors de l\'ajout au panier')
     }
   }
 
   const handleToggleFavorite = async (product) => {
+    if (!user) {
+      toast.error('Connectez-vous pour ajouter aux favoris')
+      return
+    }
+    
     try {
       const isFavorite = favorites.includes(product.id)
       
@@ -359,26 +432,35 @@ const Shopping = () => {
         
         if (error) throw error
         setFavorites(favorites.filter(id => id !== product.id))
+        toast.success(`"${product.name}" retiré des favoris`)
+        console.log('❤️ Produit retiré des favoris:', product.id)
       } else {
-        const { error } = await supabase
+        const { data, error } = await supabase
           .from('favorites')
           .insert({
             user_id: user.id,
             product_id: product.id,
+            created_at: new Date().toISOString()
           })
+          .select()
         
         if (error) throw error
         setFavorites([...favorites, product.id])
+        toast.success(`"${product.name}" ajouté aux favoris`)
+        console.log('❤️ Produit ajouté aux favoris:', {
+          productId: product.id,
+          favoriteId: data?.[0]?.id
+        })
       }
     } catch (error) {
       console.error('Error toggling favorite:', error)
+      toast.error('Erreur lors de l\'opération')
     }
   }
 
   const startVoiceSearch = () => {
     setIsListening(true)
     
-    // Vérifier si le navigateur supporte la reconnaissance vocale
     if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
       const SpeechRecognition = window.webkitSpeechRecognition || window.SpeechRecognition
       const recognition = new SpeechRecognition()
@@ -390,6 +472,8 @@ const Shopping = () => {
         const text = event.results[0][0].transcript
         setVoiceText(text)
         setSearchQuery(text)
+        toast.info(`Recherche: "${text}"`)
+        console.log('🎤 Recherche vocale:', text)
         setTimeout(() => {
           setIsListening(false)
           setVoiceText('')
@@ -399,19 +483,36 @@ const Shopping = () => {
       recognition.onerror = () => {
         setIsListening(false)
         setVoiceText('')
+        toast.error('Erreur de reconnaissance vocale')
       }
       
       recognition.start()
     } else {
-      // Fallback: afficher un message
-      alert('La reconnaissance vocale n\'est pas supportée par votre navigateur')
+      toast.error('Reconnaissance vocale non supportée')
       setIsListening(false)
     }
   }
 
   const handleGPS = () => {
-    // Naviguer vers la carte GPS Shopping
-    console.log('Open GPS Shopping')
+    console.log('🗺️ Ouverture GPS Shopping')
+    toast.info('Fonctionnalité GPS Shopping à venir')
+  }
+
+  const handleViewCart = () => {
+    console.log('🛒 Affichage du panier')
+    toast.info('Fonctionnalité de panier à venir')
+  }
+
+  if (loading && products.length === 0) {
+    return (
+      <Container>
+        <Header title="Shopping" showProfile />
+        <LoadingSpinner>
+          <div>Chargement des produits...</div>
+        </LoadingSpinner>
+        <BottomNavigation />
+      </Container>
+    )
   }
 
   return (
@@ -451,13 +552,13 @@ const Shopping = () => {
       </TabsContainer>
       
       <ProductsGrid>
-        {loading ? (
-          <div style={{ textAlign: 'center', padding: 40, gridColumn: 'span 2' }}>
-            Chargement...
-          </div>
-        ) : products.length === 0 ? (
+        {products.length === 0 ? (
           <div style={{ textAlign: 'center', padding: 40, color: '#888', gridColumn: 'span 2' }}>
-            Aucun produit trouvé
+            <div style={{ fontSize: 48, marginBottom: 16 }}>🛍️</div>
+            <div>Aucun produit trouvé</div>
+            <div style={{ fontSize: 13, marginTop: 8 }}>
+              {searchQuery ? 'Essayez une autre recherche' : 'Découvrez nos nouveautés'}
+            </div>
           </div>
         ) : (
           products.map(product => (
@@ -506,6 +607,15 @@ const Shopping = () => {
           ))
         )}
       </ProductsGrid>
+      
+      {cartCount > 0 && (
+        <CartIndicator
+          onClick={handleViewCart}
+          whileTap={{ scale: 0.95 }}
+        >
+          🛒 {cartCount} article{cartCount > 1 ? 's' : ''}
+        </CartIndicator>
+      )}
       
       <GPSButton
         onClick={handleGPS}

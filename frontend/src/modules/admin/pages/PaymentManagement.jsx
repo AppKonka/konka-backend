@@ -1,5 +1,5 @@
 // src/modules/admin/pages/PaymentManagement.jsx
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import styled from 'styled-components'
 import { motion } from 'framer-motion'
 import {
@@ -213,6 +213,14 @@ const ModalButtons = styled.div`
   gap: 12px;
 `
 
+const LoadingSpinner = styled.div`
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 40px;
+  color: ${props => props.theme.textSecondary};
+`
+
 const PaymentManagement = () => {
   const [activeTab, setActiveTab] = useState('all')
   const [transactions, setTransactions] = useState([])
@@ -229,11 +237,7 @@ const PaymentManagement = () => {
   const [refundAmount, setRefundAmount] = useState('')
   const [loading, setLoading] = useState(true)
 
-  useEffect(() => {
-    loadTransactions()
-  }, [activeTab, searchQuery])
-
-  const loadTransactions = async () => {
+  const loadTransactions = useCallback(async () => {
     setLoading(true)
     try {
       let query = supabase
@@ -266,12 +270,23 @@ const PaymentManagement = () => {
         refundedAmount: refunded.reduce((sum, t) => sum + t.amount, 0),
         successRate: data?.length ? (completed.length / data.length * 100) : 0
       })
+      
+      console.log('💰 Transactions chargées:', {
+        count: data?.length,
+        totalRevenue: completed.reduce((sum, t) => sum + t.amount, 0),
+        timestamp: new Date().toISOString()
+      })
     } catch (error) {
       console.error('Error loading transactions:', error)
+      toast.error('Erreur lors du chargement des transactions')
     } finally {
       setLoading(false)
     }
-  }
+  }, [activeTab, searchQuery])
+
+  useEffect(() => {
+    loadTransactions()
+  }, [loadTransactions])
 
   const handleRefund = async () => {
     if (!selectedTransaction) return
@@ -289,13 +304,22 @@ const PaymentManagement = () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           transaction_id: selectedTransaction.id,
-          amount: amount
+          amount: amount,
+          reason: 'customer_request'
         })
       })
       
       if (!response.ok) throw new Error('Refund failed')
       
-      toast.success('Remboursement effectué avec succès')
+      const result = await response.json()
+      
+      toast.success(`Remboursement de ${amount}€ effectué avec succès`)
+      console.log('💸 Remboursement effectué:', {
+        transactionId: selectedTransaction.id,
+        amount: amount,
+        refundId: result.refund_id
+      })
+      
       setShowRefundModal(false)
       setRefundAmount('')
       loadTransactions()
@@ -325,10 +349,38 @@ const PaymentManagement = () => {
     }
   }
 
+  const getStatusText = (status) => {
+    switch (status) {
+      case 'completed': return 'Complété'
+      case 'pending': return 'En attente'
+      case 'failed': return 'Échoué'
+      case 'refunded': return 'Remboursé'
+      default: return status
+    }
+  }
+
+  if (loading && transactions.length === 0) {
+    return (
+      <Container>
+        <Header>
+          <Title>Gestion des paiements</Title>
+        </Header>
+        <LoadingSpinner>
+          <div>Chargement des transactions...</div>
+        </LoadingSpinner>
+      </Container>
+    )
+  }
+
   return (
     <Container>
       <Header>
         <Title>Gestion des paiements</Title>
+        <div style={{ display: 'flex', gap: 12 }}>
+          <ActionButton whileTap={{ scale: 0.95 }} onClick={() => loadTransactions()}>
+            <RefreshCw size={18} />
+          </ActionButton>
+        </div>
       </Header>
       
       <StatsGrid>
@@ -356,7 +408,7 @@ const PaymentManagement = () => {
           onClick={() => setActiveTab('all')}
           whileTap={{ scale: 0.95 }}
         >
-          Tous
+          Tous ({stats.totalTransactions})
         </Tab>
         <Tab
           active={activeTab === 'completed'}
@@ -398,72 +450,101 @@ const PaymentManagement = () => {
             onChange={(e) => setSearchQuery(e.target.value)}
           />
         </SearchInput>
-        <ActionButton whileTap={{ scale: 0.95 }}>
+        <ActionButton whileTap={{ scale: 0.95 }} title="Filtrer">
           <Filter size={18} />
         </ActionButton>
-        <ActionButton whileTap={{ scale: 0.95 }}>
+        <ActionButton whileTap={{ scale: 0.95 }} title="Exporter">
           <Download size={18} />
         </ActionButton>
       </SearchBar>
       
-      <Table>
-        <thead>
-          <tr>
-            <th>ID</th>
-            <th>Utilisateur</th>
-            <th>Montant</th>
-            <th>Type</th>
-            <th>Statut</th>
-            <th>Date</th>
-            <th>Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          {loading ? (
-            <tr><td colSpan="7" style={{ textAlign: 'center', padding: 40 }}>Chargement...</td></tr>
-          ) : transactions.length === 0 ? (
-            <tr><td colSpan="7" style={{ textAlign: 'center', padding: 40 }}>Aucune transaction</td></tr>
-          ) : (
-            transactions.map(tx => (
-              <tr key={tx.id}>
-                <td style={{ fontFamily: 'monospace' }}>{tx.id.slice(-8)}</td>
-                <td>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <img src={tx.user?.avatar_url} style={{ width: 32, height: 32, borderRadius: 16 }} />
-                    @{tx.user?.username}
-                  </div>
-                </td>
-                <td style={{ fontWeight: 600 }}>{tx.amount.toLocaleString()}€</td>
-                <td>{tx.type || 'paiement'}</td>
-                <td>
-                  <StatusBadge status={tx.status}>
-                    <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                      {getStatusIcon(tx.status)} {tx.status}
-                    </span>
-                  </StatusBadge>
-                </td>
-                <td>{formatDate(tx.created_at)}</td>
-                <td>
-                  <ActionButton onClick={() => window.open(`/admin/transactions/${tx.id}`)} whileTap={{ scale: 0.9 }}>
-                    <Eye size={16} />
-                  </ActionButton>
-                  {tx.status === 'completed' && (
-                    <ActionButton onClick={() => {
-                      setSelectedTransaction(tx)
-                      setRefundAmount(tx.amount.toString())
-                      setShowRefundModal(true)
-                    }} whileTap={{ scale: 0.9 }}>
-                      <RefreshCw size={16} />
-                    </ActionButton>
-                  )}
+      <div style={{ overflowX: 'auto' }}>
+        <Table>
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Utilisateur</th>
+              <th>Montant</th>
+              <th>Type</th>
+              <th>Statut</th>
+              <th>Date</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {transactions.length === 0 ? (
+              <tr>
+                <td colSpan="7" style={{ textAlign: 'center', padding: 40 }}>
+                  <div style={{ fontSize: 48, marginBottom: 8 }}>💸</div>
+                  Aucune transaction trouvée
                 </td>
               </tr>
-            ))
-          )}
-        </tbody>
-      </Table>
+            ) : (
+              transactions.map(tx => (
+                <tr key={tx.id}>
+                  <td style={{ fontFamily: 'monospace', fontSize: 12 }}>{tx.id.slice(-8)}</td>
+                  <td>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <img 
+                        src={tx.user?.avatar_url || '/images/default-avatar.png'} 
+                        style={{ width: 32, height: 32, borderRadius: 16, objectFit: 'cover' }} 
+                        alt={tx.user?.username}
+                      />
+                      <span>@{tx.user?.username}</span>
+                    </div>
+                  </td>
+                  <td style={{ fontWeight: 600 }}>{tx.amount.toLocaleString()}€</td>
+                  <td>
+                    <span style={{ 
+                      textTransform: 'capitalize',
+                      background: '#FF6B3520',
+                      padding: '4px 8px',
+                      borderRadius: '12px',
+                      fontSize: '12px'
+                    }}>
+                      {tx.type || 'paiement'}
+                    </span>
+                  </td>
+                  <td>
+                    <StatusBadge status={tx.status}>
+                      <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                        {getStatusIcon(tx.status)} {getStatusText(tx.status)}
+                      </span>
+                    </StatusBadge>
+                  </td>
+                  <td style={{ fontSize: 13 }}>{formatDate(tx.created_at)}</td>
+                  <td>
+                    <div style={{ display: 'flex', gap: 4 }}>
+                      <ActionButton 
+                        onClick={() => window.open(`/admin/transactions/${tx.id}`, '_blank')} 
+                        whileTap={{ scale: 0.9 }}
+                        title="Voir les détails"
+                      >
+                        <Eye size={16} />
+                      </ActionButton>
+                      {tx.status === 'completed' && (
+                        <ActionButton 
+                          onClick={() => {
+                            setSelectedTransaction(tx)
+                            setRefundAmount(tx.amount.toString())
+                            setShowRefundModal(true)
+                          }} 
+                          whileTap={{ scale: 0.9 }}
+                          title="Rembourser"
+                        >
+                          <RefreshCw size={16} />
+                        </ActionButton>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </Table>
+      </div>
       
-      {showRefundModal && (
+      {showRefundModal && selectedTransaction && (
         <RefundModal
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
@@ -472,9 +553,10 @@ const PaymentManagement = () => {
         >
           <ModalContent onClick={(e) => e.stopPropagation()}>
             <ModalTitle>Remboursement</ModalTitle>
-            <p style={{ marginBottom: 16 }}>
-              Transaction: {selectedTransaction?.id.slice(-8)}<br />
-              Montant original: {selectedTransaction?.amount}€
+            <p style={{ marginBottom: 16, color: '#888' }}>
+              Transaction: <strong>{selectedTransaction.id.slice(-8)}</strong><br />
+              Utilisateur: <strong>@{selectedTransaction.user?.username}</strong><br />
+              Montant original: <strong>{selectedTransaction.amount}€</strong>
             </p>
             <ModalInput
               type="number"
@@ -484,12 +566,34 @@ const PaymentManagement = () => {
               onChange={(e) => setRefundAmount(e.target.value)}
             />
             <ModalButtons>
-              <ActionButton onClick={() => setShowRefundModal(false)} whileTap={{ scale: 0.95 }}>
+              <button
+                onClick={() => setShowRefundModal(false)}
+                style={{
+                  flex: 1,
+                  padding: '10px',
+                  borderRadius: '12px',
+                  border: '1px solid #ddd',
+                  background: 'transparent',
+                  cursor: 'pointer'
+                }}
+              >
                 Annuler
-              </ActionButton>
-              <ActionButton onClick={handleRefund} whileTap={{ scale: 0.95 }}>
+              </button>
+              <button
+                onClick={handleRefund}
+                style={{
+                  flex: 1,
+                  padding: '10px',
+                  borderRadius: '12px',
+                  border: 'none',
+                  background: '#FF6B35',
+                  color: 'white',
+                  cursor: 'pointer',
+                  fontWeight: 500
+                }}
+              >
                 Confirmer le remboursement
-              </ActionButton>
+              </button>
             </ModalButtons>
           </ModalContent>
         </RefundModal>

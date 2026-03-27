@@ -344,6 +344,10 @@ class StripeService:
     async def get_customer_payment_methods(self, customer_id: str) -> List[Dict]:
         """Récupère les méthodes de paiement d'un client"""
         try:
+            # Récupérer la méthode par défaut du client
+            customer = stripe.Customer.retrieve(customer_id)
+            default_payment_method = customer.invoice_settings.default_payment_method
+            
             payment_methods = stripe.PaymentMethod.list(
                 customer=customer_id,
                 type="card"
@@ -356,7 +360,7 @@ class StripeService:
                     "brand": pm.card.brand,
                     "exp_month": pm.card.exp_month,
                     "exp_year": pm.card.exp_year,
-                    "is_default": pm.id == customer_default
+                    "is_default": pm.id == default_payment_method
                 }
                 for pm in payment_methods.data
             ]

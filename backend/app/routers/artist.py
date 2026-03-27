@@ -7,12 +7,13 @@ from app.database import db
 from app.models.artist import ArtistStats, DedicationRequest, DedicationResponse
 from app.core.security import get_current_artist
 from app.services.ai_service import ai_service
+from app.services.notification_service import notification_service
 
 router = APIRouter()
 
 @router.get("/dashboard/stats")
 async def get_artist_stats(
-    period: str = Query("30d", regex="^(7d|30d|90d)$"),
+    period: str = Query("30d", pattern="^(7d|30d|90d)$"),
     current_user: dict = Depends(get_current_artist)
 ):
     """Récupère les statistiques de l'artiste"""
@@ -49,6 +50,9 @@ async def get_artist_stats(
         # Top 5 des morceaux
         top_tracks = sorted(tracks.data, key=lambda x: x.get('play_count', 0), reverse=True)[:5]
         
+        # Log des statistiques
+        print(f"📊 Statistiques artiste {user_id}: {total_plays} écoutes, {followers_count.count} abonnés, {dedication_revenue}€ dédicaces")
+        
         return {
             "total_plays": total_plays,
             "followers": followers_count.count,
@@ -68,11 +72,12 @@ async def get_artist_stats(
         }
         
     except Exception as e:
+        print(f"❌ Erreur lors du chargement des statistiques: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/dedications", response_model=List[DedicationResponse])
 async def get_dedication_requests(
-    status: Optional[str] = Query(None, regex="^(pending|accepted|completed|rejected)$"),
+    status: Optional[str] = Query(None, pattern="^(pending|accepted|completed|rejected)$"),
     limit: int = Query(20, ge=1, le=50),
     offset: int = Query(0, ge=0),
     current_user: dict = Depends(get_current_artist)
@@ -87,9 +92,12 @@ async def get_dedication_requests(
         
         result = query.order('requested_at', desc=True).range(offset, offset + limit - 1).execute()
         
+        print(f"📬 {len(result.data)} demandes de dédicace récupérées pour l'artiste {current_user['id']}")
+        
         return result.data or []
         
     except Exception as e:
+        print(f"❌ Erreur lors du chargement des demandes: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.put("/dedications/{dedication_id}/accept")
@@ -99,14 +107,15 @@ async def accept_dedication(
 ):
     """Accepte une demande de dédicace"""
     try:
-        dedication = db.table('dedications').select('artist_id, fan_id')\
+        dedication = db.table('dedications').select('artist_id, fan_id, price')\
             .eq('id', dedication_id)\
             .execute()
         
         if not dedication.data or dedication.data[0]['artist_id'] != current_user['id']:
             raise HTTPException(status_code=403, detail="Not authorized")
         
-        db.table('dedications').update({
+        # Mettre à jour le statut
+        await db.table('dedications').update({
             "status": "accepted",
             "accepted_at": datetime.now().isoformat()
         }).eq('id', dedication_id).execute()
@@ -117,14 +126,21 @@ async def accept_dedication(
             notification_type="dedication_accepted",
             title="Dédicace acceptée",
             content=f"Votre demande de dédicace a été acceptée",
-            data={"dedication_id": dedication_id}
+            data={
+                "dedication_id": dedication_id,
+                "artist_id": current_user['id'],
+                "price": dedication.data[0].get('price', 0)
+            }
         )
         
-        return {"message": "Dedication accepted"}
+        print(f"✅ Dédicace {dedication_id} acceptée par l'artiste {current_user['id']}")
+        
+        return {"message": "Dedication accepted", "dedication_id": dedication_id}
         
     except HTTPException:
         raise
     except Exception as e:
+        print(f"❌ Erreur lors de l'acceptation: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.put("/dedications/{dedication_id}/reject")
@@ -141,7 +157,8 @@ async def reject_dedication(
         if not dedication.data or dedication.data[0]['artist_id'] != current_user['id']:
             raise HTTPException(status_code=403, detail="Not authorized")
         
-        db.table('dedications').update({
+        # Mettre à jour le statut
+        await db.table('dedications').update({
             "status": "rejected",
             "rejected_at": datetime.now().isoformat()
         }).eq('id', dedication_id).execute()
@@ -155,11 +172,14 @@ async def reject_dedication(
             data={"dedication_id": dedication_id}
         )
         
-        return {"message": "Dedication rejected"}
+        print(f"❌ Dédicace {dedication_id} refusée par l'artiste {current_user['id']}")
+        
+        return {"message": "Dedication rejected", "dedication_id": dedication_id}
         
     except HTTPException:
         raise
     except Exception as e:
+        print(f"❌ Erreur lors du refus: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/dedications/{dedication_id}/complete")
@@ -170,7 +190,7 @@ async def complete_dedication(
 ):
     """Livrer une dédicace (upload vidéo)"""
     try:
-        dedication = db.table('dedications').select('artist_id, fan_id')\
+        dedication = db.table('dedications').select('artist_id, fan_id, price')\
             .eq('id', dedication_id)\
             .execute()
         
@@ -184,11 +204,11 @@ async def complete_dedication(
         video_path = f"dedications/{current_user['id']}/{datetime.now().timestamp()}_{video.filename}"
         video_content = await video.read()
         
-        db.storage("media").upload(video_path, video_content)
-        video_url = db.storage("media").get_public_url(video_path)
+        upload_result = db.storage("media").upload(video_path, video_content)
+        video_url = db.storage("media").get_publicUrl(video_path)
         
         # Mettre à jour la dédicace
-        db.table('dedications').update({
+        await db.table('dedications').update({
             "status": "completed",
             "video_url": video_url,
             "completed_at": datetime.now().isoformat()
@@ -200,12 +220,24 @@ async def complete_dedication(
             notification_type="dedication_completed",
             title="Votre dédicace est prête !",
             content=f"Votre dédicace est disponible",
-            data={"dedication_id": dedication_id}
+            data={
+                "dedication_id": dedication_id,
+                "artist_id": current_user['id'],
+                "video_url": video_url,
+                "price": dedication.data[0].get('price', 0)
+            }
         )
         
-        return {"message": "Dedication delivered", "video_url": video_url}
+        print(f"🎬 Dédicace {dedication_id} livrée par l'artiste {current_user['id']} - Vidéo: {video_url}")
+        
+        return {
+            "message": "Dedication delivered",
+            "video_url": video_url,
+            "dedication_id": dedication_id
+        }
         
     except HTTPException:
         raise
     except Exception as e:
+        print(f"❌ Erreur lors de la livraison: {e}")
         raise HTTPException(status_code=500, detail=str(e))

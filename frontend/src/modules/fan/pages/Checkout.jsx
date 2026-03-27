@@ -1,5 +1,5 @@
 // src/modules/fan/pages/Checkout.jsx
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import styled from 'styled-components'
 import { motion } from 'framer-motion'
@@ -139,6 +139,14 @@ const PaymentMethod = styled(motion.div)`
   }
 `
 
+const LoadingSpinner = styled.div`
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 40px;
+  color: ${props => props.theme.textSecondary};
+`
+
 const Checkout = () => {
   const navigate = useNavigate()
   const { user } = useAuth()
@@ -154,12 +162,7 @@ const Checkout = () => {
     paymentMethod: 'card'
   })
 
-  useEffect(() => {
-    loadCart()
-    loadUserAddress()
-  }, [])
-
-  const loadCart = async () => {
+  const loadCart = useCallback(async () => {
     try {
       const { data, error } = await supabase
         .from('cart_items')
@@ -176,14 +179,17 @@ const Checkout = () => {
       const itemCount = items.reduce((sum, item) => sum + item.quantity, 0)
       
       setCart({ items, total, itemCount })
+      
+      console.log('🛒 Panier chargé:', { itemsCount: items.length, total })
     } catch (error) {
       console.error('Error loading cart:', error)
+      toast.error('Erreur lors du chargement du panier')
     } finally {
       setLoading(false)
     }
-  }
+  }, [user.id])
 
-  const loadUserAddress = async () => {
+  const loadUserAddress = useCallback(async () => {
     try {
       const { data } = await supabase
         .from('users')
@@ -198,11 +204,17 @@ const Checkout = () => {
           city: data.city || '',
           country: data.country || ''
         }))
+        console.log('📍 Adresse utilisateur chargée:', data)
       }
     } catch (error) {
       console.error('Error loading address:', error)
     }
-  }
+  }, [user.id])
+
+  useEffect(() => {
+    loadCart()
+    loadUserAddress()
+  }, [loadCart, loadUserAddress])
 
   const handleChange = (e) => {
     setFormData({
@@ -224,12 +236,15 @@ const Checkout = () => {
           total_amount: cart.total,
           shipping_address: `${formData.address}, ${formData.postalCode} ${formData.city}, ${formData.country}`,
           status: 'pending',
-          payment_method: formData.paymentMethod
+          payment_method: formData.paymentMethod,
+          created_at: new Date().toISOString()
         })
         .select()
         .single()
       
       if (orderError) throw orderError
+      
+      console.log('📦 Commande créée:', { orderId: order.id, total: cart.total })
       
       // Créer les items de commande
       for (const item of cart.items) {
@@ -249,6 +264,8 @@ const Checkout = () => {
           .from('products')
           .update({ stock: item.product.stock - item.quantity })
           .eq('id', item.product.id)
+        
+        console.log(`📦 Produit ${item.product.id} commandé: ${item.quantity} unités`)
       }
       
       // Vider le panier
@@ -272,7 +289,9 @@ const Checkout = () => {
     return (
       <Container>
         <Header title="Paiement" showBack />
-        <div style={{ textAlign: 'center', padding: 40 }}>Chargement...</div>
+        <LoadingSpinner>
+          <div>Chargement de votre panier...</div>
+        </LoadingSpinner>
       </Container>
     )
   }

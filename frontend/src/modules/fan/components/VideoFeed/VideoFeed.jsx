@@ -3,10 +3,10 @@ import React, { useState, useEffect, useRef, useCallback } from 'react'
 import styled from 'styled-components'
 import { motion, AnimatePresence } from 'framer-motion'
 import ReactPlayer from 'react-player'
-import { useInView } from 'react-intersection-observer'
 import { Avatar } from '../../../shared/components/ui/Avatar'
 import { useAuth } from '../../../shared/context/AuthContext'
 import { supabase } from '../../../../config/supabase'
+import { toast } from 'react-hot-toast'
 
 const Container = styled.div`
   position: relative;
@@ -214,17 +214,13 @@ export const VideoFeed = ({ videos, onVideoEnd, onLike, onComment, onShare, onMu
   const [comments, setComments] = useState({})
   const [newComment, setNewComment] = useState('')
   const [loadingComments, setLoadingComments] = useState(false)
+  const [isVideoInView, setIsVideoInView] = useState(true)
   
   const containerRef = useRef(null)
   const playerRefs = useRef({})
   const { user } = useAuth()
 
-  useEffect(() => {
-    // Charger les likes initiaux
-    loadInitialLikes()
-  }, [videos])
-
-  const loadInitialLikes = async () => {
+  const loadInitialLikes = useCallback(async () => {
     if (!videos.length) return
     
     const videoIds = videos.map(v => v.id)
@@ -239,9 +235,15 @@ export const VideoFeed = ({ videos, onVideoEnd, onLike, onComment, onShare, onMu
       likedMap[like.post_id] = true
     })
     setLiked(likedMap)
-  }
+    
+    console.log('❤️ Likes initiaux chargés:', Object.keys(likedMap).length)
+  }, [videos, user.id])
 
-  const loadComments = async (videoId) => {
+  useEffect(() => {
+    loadInitialLikes()
+  }, [loadInitialLikes])
+
+  const loadComments = useCallback(async (videoId) => {
     if (comments[videoId]) return
     
     setLoadingComments(true)
@@ -254,12 +256,13 @@ export const VideoFeed = ({ videos, onVideoEnd, onLike, onComment, onShare, onMu
         .limit(20)
       
       setComments(prev => ({ ...prev, [videoId]: data || [] }))
+      console.log('💬 Commentaires chargés pour la vidéo:', videoId, data?.length)
     } catch (error) {
       console.error('Error loading comments:', error)
     } finally {
       setLoadingComments(false)
     }
-  }
+  }, [comments])
 
   const handleScroll = useCallback(() => {
     if (!containerRef.current) return
@@ -268,14 +271,24 @@ export const VideoFeed = ({ videos, onVideoEnd, onLike, onComment, onShare, onMu
     const videoHeight = window.innerHeight
     const newIndex = Math.round(scrollPosition / videoHeight)
     
+    // Détecter si la vidéo actuelle est visible
+    const currentVideoElement = containerRef.current.children[currentIndex]
+    if (currentVideoElement) {
+      const rect = currentVideoElement.getBoundingClientRect()
+      const isVisible = rect.top >= -100 && rect.top <= window.innerHeight + 100
+      setIsVideoInView(isVisible)
+    }
+    
     if (newIndex !== currentIndex && newIndex >= 0 && newIndex < videos.length) {
       setCurrentIndex(newIndex)
       // Pause la vidéo précédente
       if (playerRefs.current[videos[currentIndex]?.id]) {
         playerRefs.current[videos[currentIndex].id].seekTo(0)
       }
+      
+      console.log('📺 Vidéo changée:', newIndex, videos[newIndex]?.title, 'Visible:', isVideoInView)
     }
-  }, [currentIndex, videos])
+  }, [currentIndex, videos, isVideoInView])
 
   const handleDoubleClick = (e, video) => {
     if (!liked[video.id]) {
@@ -290,6 +303,8 @@ export const VideoFeed = ({ videos, onVideoEnd, onLike, onComment, onShare, onMu
       })
       setShowHeart(true)
       setTimeout(() => setShowHeart(false), 1000)
+      
+      console.log('❤️ Double tap like sur la vidéo:', video.id)
     }
   }
 
@@ -325,15 +340,36 @@ export const VideoFeed = ({ videos, onVideoEnd, onLike, onComment, onShare, onMu
       }))
       setNewComment('')
       onComment?.(video.id, (video.comment_count || 0) + 1)
+      
+      toast.success('Commentaire ajouté !')
+      console.log('💬 Commentaire ajouté:', data)
     } catch (error) {
       console.error('Error posting comment:', error)
+      toast.error('Erreur lors de l\'ajout du commentaire')
     }
   }
 
   const openComments = (video) => {
     loadComments(video.id)
     setShowComments(video.id)
+    console.log('💬 Ouverture des commentaires pour la vidéo:', video.id)
   }
+
+  // Utiliser currentVideo pour afficher des informations dans le titre du document
+  const currentVideo = videos[currentIndex]
+  
+  // Mettre à jour le titre du document avec la vidéo actuelle
+  useEffect(() => {
+    if (currentVideo && currentVideo.title) {
+      document.title = `${currentVideo.title} - KONKA`
+    } else if (currentVideo && currentVideo.user?.username) {
+      document.title = `Vidéo de @${currentVideo.user.username} - KONKA`
+    }
+    
+    return () => {
+      document.title = 'KONKA - Musique, Rencontres & Shopping'
+    }
+  }, [currentVideo])
 
   if (!videos.length) {
     return (
@@ -342,8 +378,6 @@ export const VideoFeed = ({ videos, onVideoEnd, onLike, onComment, onShare, onMu
       </div>
     )
   }
-
-  const currentVideo = videos[currentIndex]
 
   return (
     <>

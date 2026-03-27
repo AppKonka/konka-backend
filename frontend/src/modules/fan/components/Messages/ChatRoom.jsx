@@ -1,5 +1,5 @@
 // src/modules/fan/components/Messages/ChatRoom.jsx
-import React, { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect, useRef, useCallback } from 'react'
 import styled from 'styled-components'
 import { motion } from 'framer-motion'
 import { Avatar } from '../../../shared/components/ui/Avatar'
@@ -125,30 +125,22 @@ export const ChatRoom = ({ conversation, onBack }) => {
   const messagesEndRef = useRef(null)
   const { user } = useAuth()
 
-  useEffect(() => {
-    loadMessages()
-    
-    // Écouter les nouveaux messages en temps réel
-    const subscription = supabase
-      .channel(`match:${conversation.match_id}`)
-      .on('postgres_changes', {
-        event: 'INSERT',
-        schema: 'public',
-        table: 'messages',
-        filter: `match_id=eq.${conversation.match_id}`,
-      }, (payload) => {
-        setMessages(prev => [...prev, payload.new])
-        markAsRead(payload.new.id)
-        scrollToBottom()
-      })
-      .subscribe()
-    
-    return () => {
-      subscription.unsubscribe()
+  const markAsRead = useCallback(async (messageId) => {
+    try {
+      await supabase
+        .from('messages')
+        .update({ is_read: true })
+        .eq('id', messageId)
+    } catch (error) {
+      console.error('Error marking message as read:', error)
     }
-  }, [conversation.match_id])
+  }, [])
 
-  const loadMessages = async () => {
+  const scrollToBottom = useCallback(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [])
+
+  const loadMessages = useCallback(async () => {
     try {
       const { data, error } = await supabase
         .from('messages')
@@ -171,18 +163,30 @@ export const ChatRoom = ({ conversation, onBack }) => {
     } finally {
       setLoading(false)
     }
-  }
+  }, [conversation.match_id, user.id, markAsRead, scrollToBottom])
 
-  const markAsRead = async (messageId) => {
-    try {
-      await supabase
-        .from('messages')
-        .update({ is_read: true })
-        .eq('id', messageId)
-    } catch (error) {
-      console.error('Error marking message as read:', error)
+  useEffect(() => {
+    loadMessages()
+    
+    // Écouter les nouveaux messages en temps réel
+    const subscription = supabase
+      .channel(`match:${conversation.match_id}`)
+      .on('postgres_changes', {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'messages',
+        filter: `match_id=eq.${conversation.match_id}`,
+      }, (payload) => {
+        setMessages(prev => [...prev, payload.new])
+        markAsRead(payload.new.id)
+        scrollToBottom()
+      })
+      .subscribe()
+    
+    return () => {
+      subscription.unsubscribe()
     }
-  }
+  }, [conversation.match_id, loadMessages, markAsRead, scrollToBottom])
 
   const sendMessage = async () => {
     if (!newMessage.trim()) return
@@ -210,10 +214,6 @@ export const ChatRoom = ({ conversation, onBack }) => {
     if (e.key === 'Enter') {
       sendMessage()
     }
-  }
-
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }
 
   const formatTime = (date) => {

@@ -12,13 +12,38 @@ export const useMediaRecorder = (options = {}) => {
   const streamRef = useRef(null)
   const chunksRef = useRef([])
   const timerRef = useRef(null)
+  const durationRef = useRef(0)
+
+  const stopRecording = useCallback(() => {
+    if (mediaRecorderRef.current && isRecording) {
+      mediaRecorderRef.current.stop()
+      
+      if (timerRef.current) {
+        clearInterval(timerRef.current)
+        timerRef.current = null
+      }
+      
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(track => track.stop())
+        streamRef.current = null
+      }
+      
+      setIsRecording(false)
+      
+      console.log('⏹️ Enregistrement arrêté, durée totale:', durationRef.current, 'secondes')
+    }
+  }, [isRecording])
 
   const startRecording = useCallback(async (type = 'audio') => {
     try {
-      // Arrêter toute enregistrement existant
+      // Arrêter tout enregistrement existant
       if (mediaRecorderRef.current && isRecording) {
         stopRecording()
       }
+      
+      // Réinitialiser la durée
+      durationRef.current = 0
+      setDuration(0)
       
       // Demander la permission d'accès au micro/caméra
       const constraints = type === 'audio' 
@@ -36,6 +61,7 @@ export const useMediaRecorder = (options = {}) => {
       mediaRecorder.ondataavailable = (event) => {
         if (event.data.size > 0) {
           chunksRef.current.push(event.data)
+          console.log('📦 Segment audio/vidéo capturé:', event.data.size, 'bytes')
         }
       }
       
@@ -47,54 +73,55 @@ export const useMediaRecorder = (options = {}) => {
         
         if (type === 'audio') {
           setAudioUrl(url)
+          console.log('🎵 Enregistrement audio terminé:', {
+            size: blob.size,
+            duration: durationRef.current,
+            url: url
+          })
         } else {
           setVideoUrl(url)
+          console.log('🎥 Enregistrement vidéo terminé:', {
+            size: blob.size,
+            duration: durationRef.current,
+            url: url
+          })
         }
       }
       
       mediaRecorder.start(1000) // Enregistrer par segments de 1 seconde
       setIsRecording(true)
       setError(null)
-      setDuration(0)
       
-      // Timer pour la durée
+      // Timer pour la durée - utiliser durationRef pour éviter les problèmes de dépendances
       timerRef.current = setInterval(() => {
-        setDuration(prev => prev + 1)
+        durationRef.current += 1
+        setDuration(durationRef.current)
       }, 1000)
+      
+      console.log('🔴 Enregistrement démarré:', {
+        type,
+        mimeType: mediaRecorder.mimeType,
+        timestamp: new Date().toISOString()
+      })
       
     } catch (err) {
       setError(err.message)
       console.error('Error starting recording:', err)
     }
-  }, [options, isRecording])
-
-  const stopRecording = useCallback(() => {
-    if (mediaRecorderRef.current && isRecording) {
-      mediaRecorderRef.current.stop()
-      
-      if (timerRef.current) {
-        clearInterval(timerRef.current)
-        timerRef.current = null
-      }
-      
-      if (streamRef.current) {
-        streamRef.current.getTracks().forEach(track => track.stop())
-        streamRef.current = null
-      }
-      
-      setIsRecording(false)
-    }
-  }, [isRecording])
+  }, [options, isRecording, stopRecording])
 
   const resetRecording = useCallback(() => {
     if (audioUrl) {
       URL.revokeObjectURL(audioUrl)
       setAudioUrl(null)
+      console.log('🗑️ URL audio révoquée')
     }
     if (videoUrl) {
       URL.revokeObjectURL(videoUrl)
       setVideoUrl(null)
+      console.log('🗑️ URL vidéo révoquée')
     }
+    durationRef.current = 0
     setDuration(0)
   }, [audioUrl, videoUrl])
 
@@ -108,6 +135,13 @@ export const useMediaRecorder = (options = {}) => {
     document.body.appendChild(a)
     a.click()
     document.body.removeChild(a)
+    
+    console.log('💾 Enregistrement téléchargé:', {
+      type,
+      filename: a.download,
+      duration: durationRef.current,
+      url
+    })
   }, [audioUrl, videoUrl])
 
   useEffect(() => {
@@ -124,6 +158,7 @@ export const useMediaRecorder = (options = {}) => {
       if (videoUrl) {
         URL.revokeObjectURL(videoUrl)
       }
+      console.log('🧹 Nettoyage des ressources d\'enregistrement')
     }
   }, [audioUrl, videoUrl])
 

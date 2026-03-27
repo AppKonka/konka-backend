@@ -1,5 +1,5 @@
 // src/modules/fan/pages/AlbumDetail.jsx
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import styled from 'styled-components'
 import { motion } from 'framer-motion'
@@ -11,6 +11,7 @@ import { MusicPlayer } from '../../shared/components/layout/MusicPlayer'
 import { useAuth } from '../../shared/context/AuthContext'
 import { usePlayer } from '../../shared/context/PlayerContext'
 import { supabase } from '../../../config/supabase'
+import { toast } from 'react-hot-toast'
 
 const Container = styled.div`
   min-height: 100vh;
@@ -126,6 +127,14 @@ const PlayButton = styled(motion.button)`
   color: ${props => props.theme.primary};
 `
 
+const LoadingSpinner = styled.div`
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 40px;
+  color: ${props => props.theme.textSecondary};
+`
+
 const AlbumDetail = () => {
   const { albumId } = useParams()
   const navigate = useNavigate()
@@ -137,12 +146,7 @@ const AlbumDetail = () => {
   const [isSaved, setIsSaved] = useState(false)
   const [loading, setLoading] = useState(true)
 
-  useEffect(() => {
-    loadAlbum()
-    checkSavedStatus()
-  }, [albumId])
-
-  const loadAlbum = async () => {
+  const loadAlbum = useCallback(async () => {
     setLoading(true)
     try {
       // Charger l'album
@@ -167,14 +171,20 @@ const AlbumDetail = () => {
       
       setTracks(tracksData || [])
       
+      console.log('📀 Album chargé:', {
+        albumId,
+        title: albumData?.title,
+        tracksCount: tracksData?.length
+      })
     } catch (error) {
       console.error('Error loading album:', error)
+      toast.error('Erreur lors du chargement de l\'album')
     } finally {
       setLoading(false)
     }
-  }
+  }, [albumId])
 
-  const checkSavedStatus = async () => {
+  const checkSavedStatus = useCallback(async () => {
     if (!user) return
     
     try {
@@ -186,10 +196,17 @@ const AlbumDetail = () => {
       
       if (error) throw error
       setIsSaved(data && data.length > 0)
+      
+      console.log('💾 Statut sauvegarde album:', data?.length > 0)
     } catch (error) {
       console.error('Error checking saved status:', error)
     }
-  }
+  }, [user, albumId])
+
+  useEffect(() => {
+    loadAlbum()
+    checkSavedStatus()
+  }, [loadAlbum, checkSavedStatus])
 
   const handleSave = async () => {
     if (!user) {
@@ -199,34 +216,64 @@ const AlbumDetail = () => {
     
     try {
       if (isSaved) {
-        await supabase
+        const { error } = await supabase
           .from('saved_albums')
           .delete()
           .eq('user_id', user.id)
           .eq('album_id', albumId)
+        
+        if (error) throw error
         setIsSaved(false)
+        toast.success('Album retiré de vos favoris')
+        console.log('💾 Album retiré des favoris:', albumId)
       } else {
-        await supabase
+        const { data, error } = await supabase
           .from('saved_albums')
           .insert({
             user_id: user.id,
-            album_id: albumId
+            album_id: albumId,
+            saved_at: new Date().toISOString()
           })
+          .select()
+        
+        if (error) throw error
         setIsSaved(true)
+        toast.success('Album ajouté à vos favoris')
+        console.log('💾 Album ajouté aux favoris:', {
+          albumId,
+          savedId: data?.[0]?.id
+        })
       }
     } catch (error) {
       console.error('Error saving album:', error)
+      toast.error('Erreur lors de l\'enregistrement')
     }
   }
 
   const handlePlayAll = () => {
+    if (tracks.length === 0) {
+      toast.error('Aucun morceau dans cet album')
+      return
+    }
+    
     clearQueue()
     addPlaylistToQueue(tracks)
     playTrack(tracks[0])
+    
+    console.log('▶️ Lecture complète de l\'album:', {
+      albumId,
+      title: album?.title,
+      tracksCount: tracks.length
+    })
   }
 
   const handlePlayTrack = (track) => {
     playTrack(track)
+    console.log('▶️ Lecture du morceau:', {
+      trackId: track.id,
+      title: track.title,
+      albumId
+    })
   }
 
   const formatDuration = (seconds) => {
@@ -237,6 +284,7 @@ const AlbumDetail = () => {
   }
 
   const formatDate = (date) => {
+    if (!date) return 'Date inconnue'
     return new Date(date).toLocaleDateString('fr-FR', {
       year: 'numeric',
       month: 'long',
@@ -248,7 +296,10 @@ const AlbumDetail = () => {
     return (
       <Container>
         <Header title="Album" showBack />
-        <div style={{ textAlign: 'center', padding: 40 }}>Chargement...</div>
+        <LoadingSpinner>
+          <div>Chargement de l'album...</div>
+        </LoadingSpinner>
+        <MusicPlayer />
         <BottomNavigation />
       </Container>
     )
@@ -258,7 +309,13 @@ const AlbumDetail = () => {
     return (
       <Container>
         <Header title="Album" showBack />
-        <div style={{ textAlign: 'center', padding: 40 }}>Album non trouvé</div>
+        <div style={{ textAlign: 'center', padding: 40 }}>
+          <div style={{ fontSize: 48, marginBottom: 16 }}>📀</div>
+          <div>Album non trouvé</div>
+          <Button onClick={() => navigate('/fan/music')} style={{ marginTop: 20 }}>
+            Retour à la musique
+          </Button>
+        </div>
         <BottomNavigation />
       </Container>
     )
@@ -266,6 +323,7 @@ const AlbumDetail = () => {
 
   const totalDuration = tracks.reduce((sum, t) => sum + (t.duration || 0), 0)
   const totalMinutes = Math.floor(totalDuration / 60)
+  const totalSeconds = totalDuration % 60
 
   return (
     <Container>
@@ -280,13 +338,13 @@ const AlbumDetail = () => {
             <span>@{album.artist?.username}</span>
           </ArtistName>
           <ReleaseDate>
-            Sortie le {formatDate(album.release_date)} • {tracks.length} morceaux • {totalMinutes} min
+            Sortie le {formatDate(album.release_date)} • {tracks.length} morceau{tracks.length > 1 ? 'x' : ''} • {totalMinutes}:{totalSeconds.toString().padStart(2, '0')}
           </ReleaseDate>
           <ActionButtons>
-            <Button onClick={handlePlayAll}>
+            <Button onClick={handlePlayAll} whileTap={{ scale: 0.98 }}>
               ▶️ Tout écouter
             </Button>
-            <Button variant="outline" onClick={handleSave}>
+            <Button variant="outline" onClick={handleSave} whileTap={{ scale: 0.98 }}>
               {isSaved ? '✓ Enregistré' : '+ Enregistrer'}
             </Button>
           </ActionButtons>
@@ -294,21 +352,27 @@ const AlbumDetail = () => {
       </AlbumHeader>
       
       <TrackList>
-        {tracks.map((track, index) => (
-          <TrackItem
-            key={track.id}
-            onClick={() => handlePlayTrack(track)}
-            whileTap={{ scale: 0.98 }}
-          >
-            <TrackNumber>{index + 1}</TrackNumber>
-            <TrackCover src={track.cover_url || album.cover_url || '/images/default-album.jpg'} />
-            <TrackInfo>
-              <TrackTitle>{track.title}</TrackTitle>
-            </TrackInfo>
-            <TrackDuration>{formatDuration(track.duration)}</TrackDuration>
-            <PlayButton>▶️</PlayButton>
-          </TrackItem>
-        ))}
+        {tracks.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: 40, color: '#888' }}>
+            Aucun morceau dans cet album
+          </div>
+        ) : (
+          tracks.map((track, index) => (
+            <TrackItem
+              key={track.id}
+              onClick={() => handlePlayTrack(track)}
+              whileTap={{ scale: 0.98 }}
+            >
+              <TrackNumber>{index + 1}</TrackNumber>
+              <TrackCover src={track.cover_url || album.cover_url || '/images/default-album.jpg'} />
+              <TrackInfo>
+                <TrackTitle>{track.title}</TrackTitle>
+              </TrackInfo>
+              <TrackDuration>{formatDuration(track.duration)}</TrackDuration>
+              <PlayButton>▶️</PlayButton>
+            </TrackItem>
+          ))
+        )}
       </TrackList>
       
       <MusicPlayer />

@@ -39,25 +39,59 @@ export const SafeArea = ({
     // Détecter les safe areas sur iOS
     const updateInsets = () => {
       const style = getComputedStyle(document.documentElement)
-      setInsets({
+      const newInsets = {
         top: parseInt(style.getPropertyValue('env(safe-area-inset-top)')) || 0,
         bottom: parseInt(style.getPropertyValue('env(safe-area-inset-bottom)')) || 0,
         left: parseInt(style.getPropertyValue('env(safe-area-inset-left)')) || 0,
         right: parseInt(style.getPropertyValue('env(safe-area-inset-right)')) || 0,
-      })
+      }
+      setInsets(newInsets)
+      
+      // Ajouter des classes CSS personnalisées en fonction des insets
+      if (newInsets.top > 0) {
+        document.documentElement.classList.add('has-notch')
+      } else {
+        document.documentElement.classList.remove('has-notch')
+      }
+      
+      console.log('📱 SafeArea insets détectés:', newInsets)
     }
 
     updateInsets()
     window.addEventListener('resize', updateInsets)
-    return () => window.removeEventListener('resize', updateInsets)
-  }, [])
+    
+    // Appliquer les insets comme variables CSS personnalisées
+    const applyInsetsAsCSSVariables = () => {
+      document.documentElement.style.setProperty('--safe-area-inset-top', `${insets.top}px`)
+      document.documentElement.style.setProperty('--safe-area-inset-bottom', `${insets.bottom}px`)
+      document.documentElement.style.setProperty('--safe-area-inset-left', `${insets.left}px`)
+      document.documentElement.style.setProperty('--safe-area-inset-right', `${insets.right}px`)
+    }
+    
+    applyInsetsAsCSSVariables()
+    
+    return () => {
+      window.removeEventListener('resize', updateInsets)
+      document.documentElement.classList.remove('has-notch')
+      document.documentElement.style.removeProperty('--safe-area-inset-top')
+      document.documentElement.style.removeProperty('--safe-area-inset-bottom')
+      document.documentElement.style.removeProperty('--safe-area-inset-left')
+      document.documentElement.style.removeProperty('--safe-area-inset-right')
+    }
+  }, [insets.top, insets.bottom, insets.left, insets.right])
+
+  // Calculer le padding total en fonction des insets et des props
+  const computedPaddingTop = `max(${insets.top}px, ${paddingTop})`
+  const computedPaddingBottom = `max(${insets.bottom}px, ${paddingBottom})`
+  const computedPaddingLeft = `max(${insets.left}px, ${paddingLeft})`
+  const computedPaddingRight = `max(${insets.right}px, ${paddingRight})`
 
   return (
     <SafeAreaContainer
-      paddingTop={paddingTop}
-      paddingBottom={paddingBottom}
-      paddingLeft={paddingLeft}
-      paddingRight={paddingRight}
+      paddingTop={computedPaddingTop}
+      paddingBottom={computedPaddingBottom}
+      paddingLeft={computedPaddingLeft}
+      paddingRight={computedPaddingRight}
       {...props}
     >
       <Content>

@@ -1,5 +1,5 @@
 // src/modules/fan/pages/PostDetail.jsx
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import styled from 'styled-components'
 import { motion } from 'framer-motion'
@@ -10,6 +10,7 @@ import { useAuth } from '../../shared/context/AuthContext'
 import { supabase } from '../../../config/supabase'
 import { formatDistanceToNow } from 'date-fns'
 import { fr } from 'date-fns/locale'
+import { toast } from 'react-hot-toast'
 
 const Container = styled.div`
   min-height: 100vh;
@@ -162,6 +163,14 @@ const CommentText = styled.p`
   color: ${props => props.theme.text};
 `
 
+const LoadingSpinner = styled.div`
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 40px;
+  color: ${props => props.theme.textSecondary};
+`
+
 const PostDetail = () => {
   const { postId } = useParams()
   const navigate = useNavigate()
@@ -171,13 +180,9 @@ const PostDetail = () => {
   const [newComment, setNewComment] = useState('')
   const [liked, setLiked] = useState(false)
   const [loading, setLoading] = useState(true)
+  const [isSubmitting, setIsSubmitting] = useState(false)
 
-  useEffect(() => {
-    loadPost()
-    loadComments()
-  }, [postId])
-
-  const loadPost = async () => {
+  const loadPost = useCallback(async () => {
     try {
       const { data, error } = await supabase
         .from('posts')
@@ -192,20 +197,30 @@ const PostDetail = () => {
       setPost(data)
       
       // Vérifier si l'utilisateur a liké
-      const { data: likeData } = await supabase
-        .from('likes')
-        .select('id')
-        .eq('post_id', postId)
-        .eq('user_id', user.id)
+      if (user) {
+        const { data: likeData } = await supabase
+          .from('likes')
+          .select('id')
+          .eq('post_id', postId)
+          .eq('user_id', user.id)
+        
+        setLiked(likeData && likeData.length > 0)
+      }
       
-      setLiked(likeData && likeData.length > 0)
+      console.log('📝 Post chargé:', {
+        postId,
+        author: data.user?.username,
+        likes: data.like_count,
+        comments: data.comment_count
+      })
     } catch (error) {
       console.error('Error loading post:', error)
+      toast.error('Erreur lors du chargement de la publication')
       navigate('/fan/home')
     }
-  }
+  }, [postId, user, navigate])
 
-  const loadComments = async () => {
+  const loadComments = useCallback(async () => {
     try {
       const { data, error } = await supabase
         .from('comments')
@@ -219,38 +234,76 @@ const PostDetail = () => {
       
       if (error) throw error
       setComments(data || [])
+      
+      console.log('💬 Commentaires chargés:', data?.length)
     } catch (error) {
       console.error('Error loading comments:', error)
     } finally {
       setLoading(false)
     }
-  }
+  }, [postId])
+
+  useEffect(() => {
+    loadPost()
+    loadComments()
+  }, [loadPost, loadComments])
 
   const handleLike = async () => {
-    if (liked) {
-      await supabase
-        .from('likes')
-        .delete()
-        .eq('post_id', postId)
-        .eq('user_id', user.id)
-      
-      setPost(prev => ({ ...prev, like_count: prev.like_count - 1 }))
-      setLiked(false)
-    } else {
-      await supabase
-        .from('likes')
-        .insert({
-          post_id: postId,
-          user_id: user.id
+    if (!user) {
+      navigate('/login')
+      return
+    }
+    
+    try {
+      if (liked) {
+        const { error } = await supabase
+          .from('likes')
+          .delete()
+          .eq('post_id', postId)
+          .eq('user_id', user.id)
+        
+        if (error) throw error
+        
+        setPost(prev => ({ ...prev, like_count: prev.like_count - 1 }))
+        setLiked(false)
+        console.log('❤️ Like retiré:', postId)
+      } else {
+        const { data, error } = await supabase
+          .from('likes')
+          .insert({
+            post_id: postId,
+            user_id: user.id,
+            created_at: new Date().toISOString()
+          })
+          .select()
+        
+        if (error) throw error
+        
+        setPost(prev => ({ ...prev, like_count: prev.like_count + 1 }))
+        setLiked(true)
+        console.log('❤️ Like ajouté:', {
+          postId,
+          likeId: data?.[0]?.id
         })
-      
-      setPost(prev => ({ ...prev, like_count: prev.like_count + 1 }))
-      setLiked(true)
+      }
+    } catch (error) {
+      console.error('Error toggling like:', error)
+      toast.error('Erreur lors de l\'opération')
     }
   }
 
   const handleComment = async () => {
-    if (!newComment.trim()) return
+    if (!user) {
+      navigate('/login')
+      return
+    }
+    
+    if (!newComment.trim()) {
+      toast.error('Veuillez écrire un commentaire')
+      return
+    }
+    
+    setIsSubmitting(true)
     
     try {
       const { data, error } = await supabase
@@ -258,7 +311,8 @@ const PostDetail = () => {
         .insert({
           post_id: postId,
           user_id: user.id,
-          content: newComment
+          content: newComment,
+          created_at: new Date().toISOString()
         })
         .select('*, user:users(id, username, avatar_url)')
         .single()
@@ -268,12 +322,53 @@ const PostDetail = () => {
       setComments(prev => [data, ...prev])
       setNewComment('')
       setPost(prev => ({ ...prev, comment_count: prev.comment_count + 1 }))
+      
+      toast.success('Commentaire ajouté !')
+      console.log('💬 Commentaire ajouté:', {
+        postId,
+        commentId: data.id,
+        content: newComment
+      })
     } catch (error) {
       console.error('Error posting comment:', error)
+      toast.error('Erreur lors de l\'ajout du commentaire')
+    } finally {
+      setIsSubmitting(false)
     }
   }
 
-  if (!post) return null
+  const handleShare = () => {
+    const shareUrl = `${window.location.origin}/fan/post/${postId}`
+    navigator.clipboard.writeText(shareUrl)
+    toast.success('Lien copié dans le presse-papier !')
+    console.log('🔗 Lien partagé:', shareUrl)
+  }
+
+  if (loading) {
+    return (
+      <Container>
+        <Header title="Publication" showBack />
+        <LoadingSpinner>
+          <div>Chargement de la publication...</div>
+        </LoadingSpinner>
+      </Container>
+    )
+  }
+
+  if (!post) {
+    return (
+      <Container>
+        <Header title="Publication" showBack />
+        <div style={{ textAlign: 'center', padding: 40 }}>
+          <div style={{ fontSize: 48, marginBottom: 16 }}>📄</div>
+          <div>Publication non trouvée</div>
+          <Button onClick={() => navigate('/fan/home')} style={{ marginTop: 20 }}>
+            Retour à l'accueil
+          </Button>
+        </div>
+      </Container>
+    )
+  }
 
   return (
     <Container>
@@ -281,7 +376,7 @@ const PostDetail = () => {
       
       {post.type === 'image' && post.media_urls && post.media_urls[0] && (
         <PostImage>
-          <img src={post.media_urls[0]} alt={post.caption} />
+          <img src={post.media_urls[0]} alt={post.caption || 'Publication'} />
         </PostImage>
       )}
       
@@ -312,13 +407,13 @@ const PostDetail = () => {
         </PostStats>
         
         <Actions>
-          <ActionButton onClick={handleLike} whileTap={{ scale: 0.9 }}>
+          <ActionButton onClick={handleLike} whileTap={{ scale: 0.9 }} active={liked}>
             {liked ? '❤️' : '🤍'} <span>J'aime</span>
           </ActionButton>
           <ActionButton whileTap={{ scale: 0.9 }}>
             💬 <span>Commenter</span>
           </ActionButton>
-          <ActionButton whileTap={{ scale: 0.9 }}>
+          <ActionButton onClick={handleShare} whileTap={{ scale: 0.9 }}>
             🔁 <span>Partager</span>
           </ActionButton>
         </Actions>
@@ -326,8 +421,8 @@ const PostDetail = () => {
         <CommentsSection>
           <CommentInput>
             <Avatar
-              src={user.user_metadata?.avatar_url}
-              name={user.email}
+              src={user?.user_metadata?.avatar_url}
+              name={user?.email}
               size={36}
             />
             <CommentInputField
@@ -336,28 +431,36 @@ const PostDetail = () => {
               onChange={(e) => setNewComment(e.target.value)}
               onKeyPress={(e) => e.key === 'Enter' && handleComment()}
             />
-            <Button onClick={handleComment}>Envoyer</Button>
+            <Button onClick={handleComment} disabled={isSubmitting}>
+              {isSubmitting ? 'Envoi...' : 'Envoyer'}
+            </Button>
           </CommentInput>
           
           <CommentList>
-            {comments.map(comment => (
-              <CommentItem key={comment.id}>
-                <Avatar
-                  src={comment.user?.avatar_url}
-                  name={comment.user?.username}
-                  size={32}
-                />
-                <CommentContent>
-                  <CommentHeader>
-                    <CommentUsername>@{comment.user?.username}</CommentUsername>
-                    <CommentTime>
-                      {formatDistanceToNow(new Date(comment.created_at), { addSuffix: true, locale: fr })}
-                    </CommentTime>
-                  </CommentHeader>
-                  <CommentText>{comment.content}</CommentText>
-                </CommentContent>
-              </CommentItem>
-            ))}
+            {comments.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: 40, color: '#888' }}>
+                Aucun commentaire pour le moment
+              </div>
+            ) : (
+              comments.map(comment => (
+                <CommentItem key={comment.id}>
+                  <Avatar
+                    src={comment.user?.avatar_url}
+                    name={comment.user?.username}
+                    size={32}
+                  />
+                  <CommentContent>
+                    <CommentHeader>
+                      <CommentUsername>@{comment.user?.username}</CommentUsername>
+                      <CommentTime>
+                        {formatDistanceToNow(new Date(comment.created_at), { addSuffix: true, locale: fr })}
+                      </CommentTime>
+                    </CommentHeader>
+                    <CommentText>{comment.content}</CommentText>
+                  </CommentContent>
+                </CommentItem>
+              ))
+            )}
           </CommentList>
         </CommentsSection>
       </PostContent>

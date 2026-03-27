@@ -2,9 +2,7 @@
 import logging
 import json
 from datetime import datetime
-from typing import Dict, Any
-import structlog
-from pythonjsonlogger import jsonlogger
+from typing import Dict, Any, Optional
 
 class StructuredLogger:
     """Logger structuré pour les logs en JSON"""
@@ -17,16 +15,24 @@ class StructuredLogger:
         """Configure le logging structuré"""
         handler = logging.StreamHandler()
         
-        formatter = jsonlogger.JsonFormatter(
-            fmt='%(asctime)s %(name)s %(levelname)s %(message)s %(extra)s',
-            datefmt='%Y-%m-%dT%H:%M:%S%z'
-        )
-        handler.setFormatter(formatter)
+        # Formatter personnalisé sans dépendances externes
+        class CustomJsonFormatter(logging.Formatter):
+            def format(self, record):
+                log_data = {
+                    'timestamp': datetime.utcnow().isoformat(),
+                    'name': record.name,
+                    'level': record.levelname,
+                    'message': record.getMessage(),
+                    'extra': getattr(record, 'extra', {})
+                }
+                return json.dumps(log_data, ensure_ascii=False)
+        
+        handler.setFormatter(CustomJsonFormatter())
         
         self.logger.addHandler(handler)
         self.logger.setLevel(logging.INFO)
     
-    def _log(self, level: str, message: str, extra: Dict[str, Any] = None):
+    def _log(self, level: str, message: str, extra: Optional[Dict[str, Any]] = None):
         """Log un message structuré"""
         log_data = {
             'timestamp': datetime.utcnow().isoformat(),
@@ -35,14 +41,26 @@ class StructuredLogger:
             'extra': extra or {}
         }
         
+        # Créer un record avec extra
+        record = logging.LogRecord(
+            name=self.logger.name,
+            level=getattr(logging, level.upper()),
+            pathname='',
+            lineno=0,
+            msg=json.dumps(log_data, ensure_ascii=False),
+            args=(),
+            exc_info=None
+        )
+        record.extra = extra or {}
+        
         if level == 'info':
-            self.logger.info(json.dumps(log_data))
+            self.logger.handle(record)
         elif level == 'error':
-            self.logger.error(json.dumps(log_data))
+            self.logger.handle(record)
         elif level == 'warning':
-            self.logger.warning(json.dumps(log_data))
+            self.logger.handle(record)
         elif level == 'debug':
-            self.logger.debug(json.dumps(log_data))
+            self.logger.handle(record)
     
     def info(self, message: str, **kwargs):
         self._log('info', message, kwargs)
@@ -63,7 +81,7 @@ class AuditLogger:
     def __init__(self):
         self.logger = StructuredLogger('audit')
     
-    def log_action(self, user_id: str, action: str, resource: str, details: Dict = None):
+    def log_action(self, user_id: str, action: str, resource: str, details: Optional[Dict] = None):
         """Log une action utilisateur"""
         self.logger.info(
             f"User action: {action}",
@@ -104,4 +122,5 @@ class AuditLogger:
             details=details
         )
 
+# Instance singleton
 audit_logger = AuditLogger()

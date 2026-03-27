@@ -1,7 +1,7 @@
 # backend/app/services/search_service.py
 import logging
 from typing import List, Dict, Optional
-from datetime import datetime
+from datetime import datetime, timedelta
 from app.database import db
 
 logger = logging.getLogger(__name__)
