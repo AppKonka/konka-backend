@@ -1,6 +1,6 @@
-// src/modules/shared/hooks/useAuth.js
+// frontend/src/modules/shared/hooks/useAuth.js
 import { useContext } from 'react'
-import AuthContext from '../context/AuthContext'
+import AuthContext from '../context/AuthContext' // ✅ maintenant c’est default
 
 export const useAuth = () => {
   const context = useContext(AuthContext)

@@ -1,11 +1,12 @@
-// frontend/src/modules/shared/context/AuthContext.jsx
 /* eslint-disable react-refresh/only-export-components */
 import React, { createContext, useState, useContext, useEffect, useCallback } from 'react'
 import { supabase } from '../../../config/supabase'
 import { toast } from 'react-hot-toast'
 
+// Création du contexte
 const AuthContext = createContext()
 
+// Hook pour accéder au contexte
 export const useAuth = () => {
   const context = useContext(AuthContext)
   if (!context) {
@@ -14,6 +15,7 @@ export const useAuth = () => {
   return context
 }
 
+// AuthProvider complet
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null)
   const [userRole, setUserRole] = useState(null)
@@ -29,12 +31,9 @@ export const AuthProvider = ({ children }) => {
         .select('*')
         .eq('id', userId)
         .single()
-
       if (error) throw error
-
       setUserProfile(data)
-      
-      // Charger les données spécifiques au rôle
+
       if (role === 'artist') {
         const { data: artistData } = await supabase
           .from('artists')
@@ -59,44 +58,34 @@ export const AuthProvider = ({ children }) => {
   useEffect(() => {
     const initAuth = async () => {
       setLoading(true)
-      
-      // Récupérer la session actuelle
       const { data: { session } } = await supabase.auth.getSession()
       setSession(session)
-      
       if (session?.user) {
         setUser(session.user)
-        
-        // Récupérer le rôle depuis la base de données
         const { data: userData } = await supabase
           .from('users')
           .select('role')
           .eq('id', session.user.id)
           .single()
-        
         if (userData) {
           setUserRole(userData.role)
           await loadUserProfile(session.user.id, userData.role)
         }
       }
-      
       setLoading(false)
     }
-    
+
     initAuth()
-    
-    // Écouter les changements d'auth
+
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       setSession(session)
       setUser(session?.user || null)
-      
       if (session?.user) {
         const { data: userData } = await supabase
           .from('users')
           .select('role')
           .eq('id', session.user.id)
           .single()
-        
         if (userData) {
           setUserRole(userData.role)
           await loadUserProfile(session.user.id, userData.role)
@@ -106,30 +95,20 @@ export const AuthProvider = ({ children }) => {
         setUserProfile(null)
       }
     })
-    
-    return () => {
-      subscription.unsubscribe()
-    }
+
+    return () => subscription.unsubscribe()
   }, [loadUserProfile])
 
   // Inscription
   const register = async (email, password, userData) => {
     try {
-      // Créer l'utilisateur dans Supabase Auth
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email,
         password,
-        options: {
-          data: {
-            username: userData.username,
-            role: userData.role,
-          }
-        }
+        options: { data: { username: userData.username, role: userData.role } }
       })
-      
       if (authError) throw authError
-      
-      // Créer le profil utilisateur
+
       const { error: profileError } = await supabase
         .from('users')
         .insert({
@@ -144,10 +123,8 @@ export const AuthProvider = ({ children }) => {
           country: userData.country,
           city: userData.city,
         })
-      
       if (profileError) throw profileError
-      
-      // Si c'est un artiste, créer les données artiste
+
       if (userData.role === 'artist') {
         const { error: artistError } = await supabase
           .from('artists')
@@ -160,11 +137,9 @@ export const AuthProvider = ({ children }) => {
             year_started: userData.yearStarted,
             genres: userData.genres,
           })
-        
         if (artistError) throw artistError
       }
-      
-      // Si c'est un vendeur, créer les données vendeur
+
       if (userData.role === 'seller') {
         const { error: sellerError } = await supabase
           .from('sellers')
@@ -176,10 +151,9 @@ export const AuthProvider = ({ children }) => {
             categories: userData.categories,
             siret_number: userData.siretNumber,
           })
-        
         if (sellerError) throw sellerError
       }
-      
+
       toast.success('Compte créé avec succès!')
       return { success: true, user: authData.user }
     } catch (error) {
@@ -192,13 +166,8 @@ export const AuthProvider = ({ children }) => {
   // Connexion
   const login = async (email, password) => {
     try {
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      })
-      
+      const { data, error } = await supabase.auth.signInWithPassword({ email, password })
       if (error) throw error
-      
       toast.success('Connexion réussie!')
       return { success: true, user: data.user }
     } catch (error) {
@@ -220,16 +189,11 @@ export const AuthProvider = ({ children }) => {
     }
   }
 
-  // Mettre à jour le profil
+  // Mise à jour du profil
   const updateProfile = async (updates) => {
     try {
-      const { error } = await supabase
-        .from('users')
-        .update(updates)
-        .eq('id', user.id)
-      
+      const { error } = await supabase.from('users').update(updates).eq('id', user.id)
       if (error) throw error
-      
       setUserProfile(prev => ({ ...prev, ...updates }))
       toast.success('Profil mis à jour')
       return { success: true }
@@ -240,15 +204,13 @@ export const AuthProvider = ({ children }) => {
     }
   }
 
-  // Mot de passe oublié
+  // Réinitialisation du mot de passe
   const resetPassword = async (email) => {
     try {
       const { error } = await supabase.auth.resetPasswordForEmail(email, {
         redirectTo: `${window.location.origin}/reset-password`,
       })
-      
       if (error) throw error
-      
       toast.success('Email de réinitialisation envoyé')
       return { success: true }
     } catch (error) {
@@ -272,9 +234,7 @@ export const AuthProvider = ({ children }) => {
     isAuthenticated: !!user,
   }
 
-  return (
-    <AuthContext.Provider value={value}>
-      {children}
-    </AuthContext.Provider>
-  )
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }
+
+export default AuthContext
