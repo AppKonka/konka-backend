@@ -4,6 +4,7 @@ import asyncio
 import logging
 from typing import Dict, List, Optional
 from pathlib import Path
+import tempfile
 from app.config import settings
 
 logger = logging.getLogger(__name__)
@@ -13,8 +14,11 @@ class AudioEffectsService:
     
     def __init__(self):
         self.ffmpeg_path = settings.FFMPEG_PATH
-        self.temp_dir = Path("/tmp/konka_audio_effects")
-        self.temp_dir.mkdir(exist_ok=True)
+        
+        # Utiliser le dossier temp du système (compatible Windows/Linux/macOS)
+        temp_base = Path(tempfile.gettempdir()) / "konka_audio_effects"
+        self.temp_dir = temp_base
+        self.temp_dir.mkdir(parents=True, exist_ok=True)
         
         # Effets prédéfinis
         self.effects = {
@@ -229,8 +233,6 @@ class AudioEffectsService:
             output_filename = f"{Path(audio_path).stem}_vocals.mp3"
             output_path = self.temp_dir / output_filename
             
-            # Utiliser la méthode du centre (simplifié)
-            # En production, utiliser une librairie ML comme Spleeter
             cmd = [
                 self.ffmpeg_path,
                 "-i", audio_path,

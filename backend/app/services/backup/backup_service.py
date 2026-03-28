@@ -9,6 +9,7 @@ import json
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Any
 from pathlib import Path
+import tempfile
 from app.config import settings
 from app.database import db
 
@@ -43,8 +44,12 @@ class BackupService:
     """Service complet de sauvegarde automatique"""
     
     def __init__(self):
-        self.backup_dir = Path("/backups")
-        self.backup_dir.mkdir(exist_ok=True)
+        # Utiliser le dossier temp du système pour les backups (compatible Windows/Linux/macOS)
+        temp_base = Path(tempfile.gettempdir()) / "konka_backups"
+        self.backup_dir = temp_base
+        self.backup_dir.mkdir(parents=True, exist_ok=True)
+        
+        logger.info(f"Backup service initialized with backup dir: {self.backup_dir}")
         
         # Configuration S3 (optionnel)
         self.s3_client = None
@@ -74,8 +79,6 @@ class BackupService:
             "weekly": 4,
             "monthly": 12
         }
-    
-    # ==================== SAUVEGARDE BASE DE DONNÉES ====================
     
     async def backup_database(self) -> Dict[str, Any]:
         """Sauvegarde la base de données PostgreSQL"""
@@ -161,8 +164,6 @@ class BackupService:
             logger.error(f"Error in local backup: {e}")
             return None
     
-    # ==================== SAUVEGARDE MÉDIAS ====================
-    
     async def backup_media(self, bucket: str = "media") -> Dict[str, Any]:
         """Sauvegarde les médias depuis S3 (si disponible)"""
         try:
@@ -247,8 +248,6 @@ class BackupService:
             logger.error(f"Error backing up media: {e}")
             return {"success": False, "error": str(e)}
     
-    # ==================== SAUVEGARDE COMPLÈTE ====================
-    
     async def backup_full(self) -> Dict[str, Any]:
         """Sauvegarde complète (base de données + médias)"""
         try:
@@ -265,8 +264,6 @@ class BackupService:
         except Exception as e:
             logger.error(f"Error creating full backup: {e}")
             return {"success": False, "error": str(e)}
-    
-    # ==================== RESTAURATION ====================
     
     async def restore_database(self, backup_filename: str) -> Dict[str, Any]:
         """Restaure une sauvegarde de base de données"""
@@ -375,8 +372,6 @@ class BackupService:
             logger.error(f"Error restoring media: {e}")
             return {"success": False, "error": str(e)}
     
-    # ==================== NETTOYAGE ====================
-    
     async def _cleanup_old_backups(self):
         """Supprime les anciennes sauvegardes selon la politique de rétention"""
         try:
@@ -426,8 +421,6 @@ class BackupService:
         except Exception as e:
             logger.error(f"Error cleaning up old backups: {e}")
     
-    # ==================== UTILITAIRES S3 ====================
-    
     async def _upload_to_s3(self, file_path: Path, key: str):
         """Upload un fichier vers S3"""
         if not self.s3_client:
@@ -465,8 +458,6 @@ class BackupService:
         except Exception as e:
             logger.error(f"Error downloading from S3: {e}")
             raise
-    
-    # ==================== SCHÉDULER ====================
     
     async def schedule_backup(self, schedule: str = "daily") -> Dict[str, Any]:
         """Planifie des sauvegardes automatiques"""
@@ -517,8 +508,6 @@ class BackupService:
         except Exception as e:
             logger.error(f"Error scheduling backup: {e}")
             return {"success": False, "error": str(e)}
-    
-    # ==================== STATISTIQUES ====================
     
     async def get_backup_stats(self) -> Dict[str, Any]:
         """Récupère les statistiques des sauvegardes"""

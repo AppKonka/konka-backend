@@ -10,6 +10,7 @@ from typing import Optional, Dict, List, Any, Tuple
 from pathlib import Path
 import logging
 from datetime import datetime
+import tempfile
 from app.config import settings
 
 logger = logging.getLogger(__name__)
@@ -20,8 +21,11 @@ class FFmpegService:
     def __init__(self):
         self.ffmpeg_path = settings.FFMPEG_PATH
         self.ffprobe_path = settings.FFPROBE_PATH or "ffprobe"
-        self.temp_dir = Path("/tmp/konka_transcode")
-        self.temp_dir.mkdir(exist_ok=True)
+        
+        # Utiliser le dossier temp du système (compatible Windows/Linux/macOS)
+        temp_base = Path(tempfile.gettempdir()) / "konka_transcode"
+        self.temp_dir = temp_base
+        self.temp_dir.mkdir(parents=True, exist_ok=True)
         
         # Configurations de compression
         self.video_presets = {
@@ -39,8 +43,6 @@ class FFmpegService:
             "high": "192k",
             "very_high": "320k"
         }
-    
-    # ==================== MÉTADONNÉES ====================
     
     async def get_media_info(self, file_path: str) -> Dict[str, Any]:
         """Récupère les métadonnées complètes d'un fichier média"""
@@ -107,8 +109,6 @@ class FFmpegService:
         except Exception as e:
             logger.error(f"Error getting media info: {e}")
             raise
-    
-    # ==================== TRANSCODAGE VIDÉO ====================
     
     async def transcode_video(
         self,
@@ -198,8 +198,6 @@ class FFmpegService:
             if output_path.exists():
                 output_path.unlink()
     
-    # ==================== TRANSCODAGE AUDIO ====================
-    
     async def transcode_audio(
         self,
         input_path: str,
@@ -269,8 +267,6 @@ class FFmpegService:
             if output_path.exists():
                 output_path.unlink()
     
-    # ==================== EXTRACTION AUDIO ====================
-    
     async def extract_audio(
         self,
         video_path: str,
@@ -308,8 +304,6 @@ class FFmpegService:
         finally:
             if output_path.exists():
                 output_path.unlink()
-    
-    # ==================== GÉNÉRATION DE VAGUES (WAVEFORM) ====================
     
     async def generate_waveform(
         self,
@@ -352,8 +346,6 @@ class FFmpegService:
         finally:
             if output_path.exists():
                 output_path.unlink()
-    
-    # ==================== CONVERSION FORMATS ====================
     
     async def convert_to_gif(
         self,
@@ -412,8 +404,6 @@ class FFmpegService:
             if output_path.exists():
                 output_path.unlink()
     
-    # ==================== CONCATÉNATION ====================
-    
     async def concatenate_videos(
         self,
         video_paths: List[str],
@@ -460,8 +450,6 @@ class FFmpegService:
             if output_path.exists():
                 output_path.unlink()
     
-    # ==================== AJOUTER UN SON ====================
-    
     async def add_audio_to_video(
         self,
         video_path: str,
@@ -505,8 +493,6 @@ class FFmpegService:
             if output_path.exists():
                 output_path.unlink()
     
-    # ==================== AJOUTER DES SOUS-TITRES ====================
-    
     async def add_subtitles(
         self,
         video_path: str,
@@ -545,8 +531,6 @@ class FFmpegService:
         finally:
             if output_path.exists():
                 output_path.unlink()
-    
-    # ==================== ROGNER VIDÉO ====================
     
     async def crop_video(
         self,
@@ -587,8 +571,6 @@ class FFmpegService:
         finally:
             if output_path.exists():
                 output_path.unlink()
-    
-    # ==================== AJOUTER UN FILTRE ====================
     
     async def apply_filter(
         self,
@@ -643,8 +625,6 @@ class FFmpegService:
             if output_path.exists():
                 output_path.unlink()
     
-    # ==================== AJOUTER UN LOGO / WATERMARK ====================
-    
     async def add_watermark(
         self,
         video_path: str,
@@ -696,8 +676,6 @@ class FFmpegService:
             if output_path.exists():
                 output_path.unlink()
     
-    # ==================== CHANGER LA VITESSE ====================
-    
     async def change_speed(
         self,
         video_path: str,
@@ -747,8 +725,6 @@ class FFmpegService:
             if output_path.exists():
                 output_path.unlink()
     
-    # ==================== EXTRAIRE UNE IMAGE ====================
-    
     async def extract_frame(
         self,
         video_path: str,
@@ -792,14 +768,12 @@ class FFmpegService:
             if output_path.exists():
                 output_path.unlink()
     
-    # ==================== NETTOYAGE ====================
-    
     async def cleanup(self):
         """Nettoie les fichiers temporaires"""
         try:
             if self.temp_dir.exists():
                 shutil.rmtree(self.temp_dir)
-                self.temp_dir.mkdir(exist_ok=True)
+                self.temp_dir.mkdir(parents=True, exist_ok=True)
         except Exception as e:
             logger.error(f"Error cleaning temp files: {e}")
 

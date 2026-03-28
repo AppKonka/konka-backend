@@ -1,3 +1,4 @@
+/*src/styles/theme.js */
 export const theme = {
   primary: '#FF6B35',
   primaryDark: '#FF4D1E',

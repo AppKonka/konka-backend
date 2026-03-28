@@ -6,7 +6,7 @@ import subprocess
 from typing import Optional, Tuple
 import logging
 from pathlib import Path
-import numpy as np
+import tempfile
 
 from app.config import settings
 from app.database import db
@@ -18,8 +18,13 @@ class AudioService:
     
     def __init__(self):
         self.ffmpeg_path = settings.FFMPEG_PATH
-        self.temp_dir = Path("/tmp/konka_audio")
-        self.temp_dir.mkdir(exist_ok=True)
+        
+        # Utiliser le dossier temp du système (compatible Windows/Linux/macOS)
+        temp_base = Path(tempfile.gettempdir()) / "konka_audio"
+        self.temp_dir = temp_base
+        self.temp_dir.mkdir(parents=True, exist_ok=True)
+        
+        logger.info(f"Audio service initialized with temp dir: {self.temp_dir}")
     
     async def process_audio(
         self,

@@ -9,6 +9,7 @@ from typing import Optional, Dict, List, Any
 from pathlib import Path
 import logging
 from datetime import datetime, timedelta
+import tempfile
 
 from app.config import settings
 from app.database import db
@@ -21,8 +22,11 @@ class VideoStreamService:
     
     def __init__(self):
         self.ffmpeg_path = settings.FFMPEG_PATH
-        self.temp_dir = Path("/tmp/konka_stream")
-        self.temp_dir.mkdir(exist_ok=True)
+        
+        # Utiliser le dossier temp du système (compatible Windows/Linux/macOS)
+        temp_base = Path(tempfile.gettempdir()) / "konka_stream"
+        self.temp_dir = temp_base
+        self.temp_dir.mkdir(parents=True, exist_ok=True)
         
         # Qualités de transcodage pour HLS
         self.hls_qualities = [
@@ -40,8 +44,6 @@ class VideoStreamService:
             {"name": "480p", "width": 854, "height": 480, "bitrate": "1000k"},
             {"name": "360p", "width": 640, "height": 360, "bitrate": "500k"},
         ]
-    
-    # ==================== TRANSCODAGE HLS ====================
     
     async def transcode_to_hls(
         self,
@@ -78,7 +80,7 @@ class VideoStreamService:
                     "-c:v", "libx264",
                     "-crf", "23",
                     "-preset", "medium",
-                    "-g", str(segment_duration * 2),  # GOP size
+                    "-g", str(segment_duration * 2),
                     "-keyint_min", str(segment_duration),
                     "-sc_threshold", "0",
                     "-b:v", quality["bitrate"],
@@ -168,8 +170,6 @@ class VideoStreamService:
             logger.error(f"Error transcoding video to HLS: {e}")
             raise
     
-    # ==================== TRANSCODAGE DASH ====================
-    
     async def transcode_to_dash(
         self,
         input_path: str,
@@ -196,8 +196,7 @@ class VideoStreamService:
                 }
                 representations.append(representation)
             
-            # Commande FFmpeg pour DASH avec MP4Box (GPAC)
-            # Alternative: utiliser FFmpeg avec le muxer dash
+            # Commande FFmpeg pour DASH
             cmd = [
                 self.ffmpeg_path,
                 "-i", input_path,
@@ -256,8 +255,6 @@ class VideoStreamService:
             logger.error(f"Error transcoding video to DASH: {e}")
             raise
     
-    # ==================== TRANSCODAGE ADAPTATIF ====================
-    
     async def transcode_adaptive(
         self,
         input_path: str,
@@ -293,8 +290,6 @@ class VideoStreamService:
                 "stream_error": str(e)
             }).eq('id', video_id).execute()
             raise
-    
-    # ==================== UPLOAD VERS S3 AVEC CDN ====================
     
     async def _upload_to_s3(
         self,
@@ -348,8 +343,6 @@ class VideoStreamService:
             ".webm": "video/webm"
         }
         return content_types.get(extension, "application/octet-stream")
-    
-    # ==================== GÉNÉRATION DE MINIATURES ====================
     
     async def generate_thumbnails(
         self,
@@ -457,8 +450,6 @@ class VideoStreamService:
         except Exception as e:
             logger.error(f"Error generating animated thumbnail: {e}")
             return ""
-    
-    # ==================== UTILITAIRES ====================
     
     async def _get_video_duration(self, video_path: str) -> float:
         """Récupère la durée d'une vidéo"""

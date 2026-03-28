@@ -1,4 +1,3 @@
-// src/modules/auth/pages/Register.jsx
 import React, { useState, useEffect } from 'react'
 import { useNavigate, Link, useSearchParams } from 'react-router-dom'
 import styled from 'styled-components'
@@ -195,7 +194,16 @@ const Register = () => {
     
     if (result.success) {
       toast.success('Inscription réussie !')
-      navigate('/role-selection')
+      // Rediriger vers le dashboard correspondant au rôle
+      if (role === 'fan') {
+        navigate('/fan/home')
+      } else if (role === 'artist') {
+        navigate('/artist/dashboard')
+      } else if (role === 'seller') {
+        navigate('/seller/dashboard')
+      } else {
+        navigate('/')
+      }
     } else {
       toast.error(result.error || 'Erreur lors de l\'inscription')
     }
@@ -216,7 +224,7 @@ const Register = () => {
     }
   }
 
-  const roleLabel = role === 'fan' ? 'Fan' : role === 'artist' ? 'Artiste' : 'Vendeur'
+  const roleLabel = role === 'fan' ? 'Fan' : role === 'artist' ? 'Artiste' : role === 'seller' ? 'Vendeur' : ''
 
   return (
     <Container
@@ -227,7 +235,7 @@ const Register = () => {
       theme={theme}
     >
       <BackButton
-        onClick={() => navigate('/')}
+        onClick={() => navigate('/role-selection')}
         whileTap={{ scale: 0.95 }}
         whileHover={{ scale: 1.05 }}
         theme={theme}

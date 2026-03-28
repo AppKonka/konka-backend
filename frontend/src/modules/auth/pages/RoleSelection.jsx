@@ -1,12 +1,9 @@
-// src/modules/auth/pages/RoleSelection.jsx
 import React, { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import styled from 'styled-components'
 import { motion } from 'framer-motion'
 import { Button } from '../../shared/components/ui/Button'
 import { useTheme } from '../../shared/context/ThemeContext'
-import { useAuth } from '../../shared/context/AuthContext'
-import { supabase } from '../../../config/supabase'
 
 const Container = styled.div`
   min-height: 100vh;
@@ -110,38 +107,14 @@ const RoleSelection = () => {
   const [loading, setLoading] = useState(false)
   const navigate = useNavigate()
   const theme = useTheme()
-  const { user, updateProfile } = useAuth()
 
-  const handleContinue = async () => {
-    if (!selectedRole) return
-    
-    setLoading(true)
-    try {
-      // Mettre à jour le rôle dans la base de données
-      const { error } = await supabase
-        .from('users')
-        .update({ role: selectedRole })
-        .eq('id', user.id)
-      
-      if (error) throw error
-      
-      // Mettre à jour le contexte
-      await updateProfile({ role: selectedRole })
-      
-      // Rediriger vers les pages qui EXISTENT dans l'application
-      if (selectedRole === 'fan') {
-        navigate('/fan/home')
-      } else if (selectedRole === 'artist') {
-        navigate('/artist/dashboard')
-      } else if (selectedRole === 'seller') {
-        navigate('/seller/dashboard')
-      }
-      
-    } catch (error) {
-      console.error('Error updating role:', error)
-    } finally {
-      setLoading(false)
+  const handleContinue = () => {
+    if (!selectedRole) {
+      return
     }
+    
+    // Rediriger vers la page d'inscription avec le rôle choisi dans l'URL
+    navigate(`/register?role=${selectedRole}`)
   }
 
   return (

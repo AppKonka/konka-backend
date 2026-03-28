@@ -5,6 +5,7 @@ import json
 import logging
 from typing import Dict, List, Optional, Tuple
 from pathlib import Path
+import tempfile
 from app.config import settings
 
 logger = logging.getLogger(__name__)
@@ -14,8 +15,11 @@ class VideoEffectsService:
     
     def __init__(self):
         self.ffmpeg_path = settings.FFMPEG_PATH
-        self.temp_dir = Path("/tmp/konka_effects")
-        self.temp_dir.mkdir(exist_ok=True)
+        
+        # Utiliser le dossier temp du système (compatible Windows/Linux/macOS)
+        temp_base = Path(tempfile.gettempdir()) / "konka_effects"
+        self.temp_dir = temp_base
+        self.temp_dir.mkdir(parents=True, exist_ok=True)
         
         # Filtres prédéfinis
         self.filters = {
