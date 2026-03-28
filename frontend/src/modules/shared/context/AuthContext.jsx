@@ -1,13 +1,10 @@
-//src/modules/shared/context/AuthContext.jsx
 /* eslint-disable react-refresh/only-export-components */
 import React, { createContext, useState, useContext, useEffect, useCallback } from 'react'
 import { supabase } from '../../../config/supabase'
 import { toast } from 'react-hot-toast'
 
-// Création du contexte
 const AuthContext = createContext()
 
-// Hook pour accéder au contexte
 export const useAuth = () => {
   const context = useContext(AuthContext)
   if (!context) {
@@ -16,7 +13,6 @@ export const useAuth = () => {
   return context
 }
 
-// AuthProvider complet
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null)
   const [userRole, setUserRole] = useState(null)
@@ -24,80 +20,116 @@ export const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(true)
   const [session, setSession] = useState(null)
 
-  // Charger le profil utilisateur
-  const loadUserProfile = useCallback(async (userId, role) => {
+  // Charger le profil utilisateur - VERSION CORRIGÉE SANS BLOCAGE
+  const loadUserProfile = useCallback(async (userId, retryCount = 0) => {
+    if (!userId) {
+      console.log('No userId provided to loadUserProfile')
+      setUserProfile(null)
+      return null
+    }
+    
     try {
+      console.log(`Loading profile for user: ${userId} (attempt ${retryCount + 1})`)
+      
       const { data, error } = await supabase
         .from('users')
         .select('*')
         .eq('id', userId)
-        .single()
-      if (error) throw error
-      setUserProfile(data)
-
-      if (role === 'artist') {
-        const { data: artistData } = await supabase
-          .from('artists')
-          .select('*')
-          .eq('user_id', userId)
-          .single()
-        setUserProfile(prev => ({ ...prev, artistData }))
-      } else if (role === 'seller') {
-        const { data: sellerData } = await supabase
-          .from('sellers')
-          .select('*')
-          .eq('user_id', userId)
-          .single()
-        setUserProfile(prev => ({ ...prev, sellerData }))
+        .maybeSingle()
+      
+      if (error) {
+        console.error('Error loading profile:', error)
+        setUserProfile(null)
+        return null
       }
+      
+      if (!data) {
+        console.warn(`No profile found for user: ${userId}`)
+        if (retryCount < 3) {
+          console.log(`Retrying in 1s... (attempt ${retryCount + 2}/3)`)
+          setTimeout(() => loadUserProfile(userId, retryCount + 1), 1000)
+          return null
+        } else {
+          console.error('Profile not found after 3 attempts')
+          setUserProfile(null)
+          return null
+        }
+      }
+      
+      console.log('Profile loaded successfully:', data)
+      setUserProfile(data)
+      setUserRole(data.role)
+      return data
+      
     } catch (error) {
-      console.error('Error loading user profile:', error)
+      console.error('Unexpected error loading profile:', error)
+      setUserProfile(null)
+      return null
     }
   }, [])
 
-  // Initialiser l'auth
+  // Initialiser l'auth - VERSION CORRIGÉE
   useEffect(() => {
+    let isMounted = true
+    
     const initAuth = async () => {
-      setLoading(true)
-      const { data: { session } } = await supabase.auth.getSession()
-      setSession(session)
-      if (session?.user) {
-        setUser(session.user)
-        const { data: userData } = await supabase
-          .from('users')
-          .select('role')
-          .eq('id', session.user.id)
-          .single()
-        if (userData) {
-          setUserRole(userData.role)
-          await loadUserProfile(session.user.id, userData.role)
+      try {
+        console.log('Initializing auth...')
+        setLoading(true)
+        
+        const { data: { session } } = await supabase.auth.getSession()
+        
+        if (!isMounted) return
+        
+        setSession(session)
+        
+        if (session?.user) {
+          console.log('User found in session:', session.user.id)
+          setUser(session.user)
+          await loadUserProfile(session.user.id)
+        } else {
+          console.log('No user in session')
+          setUser(null)
+          setUserProfile(null)
+          setUserRole(null)
+        }
+        
+        setLoading(false)
+        console.log('Auth initialization complete, loading:', false)
+        
+      } catch (error) {
+        console.error('Error initializing auth:', error)
+        if (isMounted) {
+          setLoading(false)
+          setUser(null)
+          setUserProfile(null)
+          setUserRole(null)
         }
       }
-      setLoading(false)
     }
 
     initAuth()
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      console.log('Auth state changed:', event, session?.user?.id)
+      
+      if (!isMounted) return
+      
       setSession(session)
       setUser(session?.user || null)
+      
       if (session?.user) {
-        const { data: userData } = await supabase
-          .from('users')
-          .select('role')
-          .eq('id', session.user.id)
-          .single()
-        if (userData) {
-          setUserRole(userData.role)
-          await loadUserProfile(session.user.id, userData.role)
-        }
+        loadUserProfile(session.user.id)
       } else {
-        setUserRole(null)
         setUserProfile(null)
+        setUserRole(null)
       }
     })
 
-    return () => subscription.unsubscribe()
+    return () => {
+      isMounted = false
+      subscription.unsubscribe()
+    }
   }, [loadUserProfile])
 
   // Inscription
@@ -110,49 +142,18 @@ export const AuthProvider = ({ children }) => {
       })
       if (authError) throw authError
 
-      const { error: profileError } = await supabase
-        .from('users')
-        .insert({
-          id: authData.user.id,
-          email,
-          username: userData.username,
-          display_name: userData.displayName || userData.username,
-          role: userData.role,
-          phone: userData.phone,
-          date_of_birth: userData.dateOfBirth,
-          gender: userData.gender,
-          country: userData.country,
-          city: userData.city,
-        })
-      if (profileError) throw profileError
-
-      if (userData.role === 'artist') {
-        const { error: artistError } = await supabase
-          .from('artists')
-          .insert({
-            user_id: authData.user.id,
-            artist_name: userData.artistName || userData.username,
-            legal_name: userData.legalName,
-            nationality: userData.nationality,
-            type: userData.artistType,
-            year_started: userData.yearStarted,
-            genres: userData.genres,
-          })
-        if (artistError) throw artistError
+      if (!authData.user) {
+        throw new Error('User creation failed')
       }
 
-      if (userData.role === 'seller') {
-        const { error: sellerError } = await supabase
-          .from('sellers')
-          .insert({
-            user_id: authData.user.id,
-            store_name: userData.storeName,
-            store_description: userData.storeDescription,
-            store_type: userData.storeType,
-            categories: userData.categories,
-            siret_number: userData.siretNumber,
-          })
-        if (sellerError) throw sellerError
+      console.log('Auth user created:', authData.user.id)
+
+      await new Promise(resolve => setTimeout(resolve, 1000))
+
+      const profile = await loadUserProfile(authData.user.id, 0)
+      
+      if (!profile) {
+        console.warn('Profile not found after registration, but user was created')
       }
 
       toast.success('Compte créé avec succès!')
@@ -169,6 +170,8 @@ export const AuthProvider = ({ children }) => {
     try {
       const { data, error } = await supabase.auth.signInWithPassword({ email, password })
       if (error) throw error
+      
+      console.log('Login successful:', data.user.id)
       toast.success('Connexion réussie!')
       return { success: true, user: data.user }
     } catch (error) {
@@ -183,6 +186,8 @@ export const AuthProvider = ({ children }) => {
     try {
       const { error } = await supabase.auth.signOut()
       if (error) throw error
+      setUserProfile(null)
+      setUserRole(null)
       toast.success('Déconnexion réussie')
     } catch (error) {
       console.error('Logout error:', error)
@@ -193,8 +198,11 @@ export const AuthProvider = ({ children }) => {
   // Mise à jour du profil
   const updateProfile = async (updates) => {
     try {
+      if (!user) throw new Error('No user logged in')
+      
       const { error } = await supabase.from('users').update(updates).eq('id', user.id)
       if (error) throw error
+      
       setUserProfile(prev => ({ ...prev, ...updates }))
       toast.success('Profil mis à jour')
       return { success: true }
