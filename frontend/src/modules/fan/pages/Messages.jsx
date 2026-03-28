@@ -295,18 +295,22 @@ const Messages = () => {
     })
   }, [])
 
+  // useEffect corrigé - SANS conversations dans les dépendances
   useEffect(() => {
     loadConversations()
     loadStories()
     
     // Écouter les nouveaux messages en temps réel
+    // Utiliser une variable pour stocker les IDs des conversations actuelles
+    const conversationIds = conversations.map(c => c.match_id).join(',')
+    
     const subscription = supabase
       .channel('messages')
       .on('postgres_changes', {
         event: 'INSERT',
         schema: 'public',
         table: 'messages',
-        filter: `match_id=in.(${conversations.map(c => c.match_id).join(',')})`,
+        filter: `match_id=in.(${conversationIds})`,
       }, (payload) => {
         updateConversation(payload.new)
       })
@@ -315,7 +319,7 @@ const Messages = () => {
     return () => {
       subscription.unsubscribe()
     }
-  }, [activeTab, loadConversations, loadStories, updateConversation, conversations])
+  }, [activeTab, loadConversations, loadStories, updateConversation]) // <- conversations retiré
 
   const formatTime = (date) => {
     const now = new Date()
