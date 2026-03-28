@@ -80,7 +80,7 @@ const NowPlayingBar = styled.div`
   align-items: center;
   gap: 12px;
   cursor: pointer;
-  box-shadow: ${props => props.theme.shadow.sm};
+  box-shadow: 0 2px 4px rgba(0,0,0,0.05);
   
   &:hover {
     background: ${props => props.theme.border};

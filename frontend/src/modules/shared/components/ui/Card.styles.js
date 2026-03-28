@@ -6,12 +6,12 @@ export const CardContainer = styled(motion.div)`
   background: ${props => props.theme.surface};
   border-radius: 16px;
   overflow: hidden;
-  box-shadow: ${props => props.theme.shadow.sm};
+  box-shadow: 0 2px 4px rgba(0,0,0,0.05);
   transition: all 0.2s ease;
   
   &:hover {
     transform: translateY(-4px);
-    box-shadow: ${props => props.theme.shadow.lg};
+    box-shadow: 0 10px 15px rgba(0,0,0,0.1);
   }
 `
 

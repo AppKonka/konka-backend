@@ -27,7 +27,7 @@ const Dropdown = styled(motion.div)`
   margin-top: 8px;
   background: ${props => props.theme.surface};
   border-radius: 12px;
-  box-shadow: ${props => props.theme.shadow.lg};
+  box-shadow: 0 10px 15px rgba(0,0,0,0.1);
   border: 1px solid ${props => props.theme.border};
   overflow: hidden;
   z-index: 100;

@@ -31,7 +31,7 @@ const AlbumCover = styled.img`
   height: 140px;
   border-radius: 12px;
   object-fit: cover;
-  box-shadow: ${props => props.theme.shadow.lg};
+  box-shadow: 0 10px 15px rgba(0,0,0,0.1);
 `
 
 const AlbumInfo = styled.div`

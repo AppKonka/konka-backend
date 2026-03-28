@@ -91,7 +91,7 @@ const ProductCard = styled(motion.div)`
   background: ${props => props.theme.surface};
   border-radius: 16px;
   overflow: hidden;
-  box-shadow: ${props => props.theme.shadow.sm};
+  box-shadow: 0 2px 4px rgba(0,0,0,0.05);
 `
 
 const ProductImage = styled.div`

@@ -46,7 +46,7 @@ const StatCard = styled(motion.div)`
   background: ${props => props.theme.surface};
   border-radius: 16px;
   padding: 16px;
-  box-shadow: ${props => props.theme.shadow.sm};
+  box-shadow: 0 2px 4px rgba(0,0,0,0.05);
 `
 
 const StatValue = styled.div`
@@ -90,7 +90,7 @@ const QuickActionButton = styled(motion.button)`
   align-items: center;
   justify-content: center;
   gap: 8px;
-  box-shadow: ${props => props.theme.shadow.sm};
+  box-shadow: 0 2px 4px rgba(0,0,0,0.05);
 `
 
 const TopTracksList = styled.div`
@@ -156,7 +156,7 @@ const UpcomingLiveCard = styled(motion.div)`
   display: flex;
   justify-content: space-between;
   align-items: center;
-  box-shadow: ${props => props.theme.shadow.sm};
+  box-shadow: 0 2px 4px rgba(0,0,0,0.05);
 `
 
 const LiveInfo = styled.div`

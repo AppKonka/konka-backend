@@ -124,7 +124,7 @@ const ChartCard = styled.div`
   background: ${props => props.theme.surface};
   border-radius: 16px;
   padding: 20px;
-  box-shadow: ${props => props.theme.shadow.sm};
+  box-shadow: 0 2px 4px rgba(0,0,0,0.05);
 `
 
 const ChartTitle = styled.h3`

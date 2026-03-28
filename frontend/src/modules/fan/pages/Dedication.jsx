@@ -66,7 +66,7 @@ const ArtistCard = styled(motion.div)`
   border-radius: 20px;
   overflow: hidden;
   cursor: pointer;
-  box-shadow: ${props => props.theme.shadow.sm};
+  box-shadow: 0 2px 4px rgba(0,0,0,0.05);
 `
 
 const ArtistImage = styled.div`
@@ -219,7 +219,7 @@ const OrderCard = styled(motion.div)`
   border-radius: 16px;
   padding: 16px;
   margin-bottom: 12px;
-  box-shadow: ${props => props.theme.shadow.sm};
+  box-shadow: 0 2px 4px rgba(0,0,0,0.05);
 `
 
 const OrderHeader = styled.div`

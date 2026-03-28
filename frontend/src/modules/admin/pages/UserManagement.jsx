@@ -187,7 +187,7 @@ const ActionDropdown = styled(motion.div)`
   right: 0;
   background: ${props => props.theme.surface};
   border-radius: 12px;
-  box-shadow: ${props => props.theme.shadow.lg};
+  box-shadow: 0 10px 15px rgba(0,0,0,0.1);
   border: 1px solid ${props => props.theme.border};
   z-index: 10;
   min-width: 150px;
@@ -495,7 +495,7 @@ const UserManagement = () => {
             <th onClick={() => handleSort('created_at')}>Date</th>
             <th onClick={() => handleSort('is_blocked')}>Statut</th>
             <th>Actions</th>
-          </tr>
+           </tr>
         </thead>
         <tbody>
           {users.length === 0 ? (

@@ -46,7 +46,7 @@ const StatCard = styled(motion.div)`
   background: ${props => props.theme.surface};
   border-radius: 16px;
   padding: 16px;
-  box-shadow: ${props => props.theme.shadow.sm};
+  box-shadow: 0 2px 4px rgba(0,0,0,0.05);
 `
 
 const StatValue = styled.div`
@@ -90,7 +90,7 @@ const QuickActionButton = styled(motion.button)`
   align-items: center;
   justify-content: center;
   gap: 8px;
-  box-shadow: ${props => props.theme.shadow.sm};
+  box-shadow: 0 2px 4px rgba(0,0,0,0.05);
 `
 
 const OrdersList = styled.div`
@@ -102,7 +102,7 @@ const OrderCard = styled(motion.div)`
   border-radius: 16px;
   padding: 16px;
   margin-bottom: 12px;
-  box-shadow: ${props => props.theme.shadow.sm};
+  box-shadow: 0 2px 4px rgba(0,0,0,0.05);
 `
 
 const OrderHeader = styled.div`
@@ -213,7 +213,7 @@ const ActionButton = styled(motion.button)`
   font-size: 12px;
   font-weight: 500;
   cursor: pointer;
-  box-shadow: ${props => props.theme.shadow.sm};
+  box-shadow: 0 2px 4px rgba(0,0,0,0.05);
 `
 
 const LowStockList = styled.div`

@@ -95,7 +95,7 @@ const InfoCard = styled(motion.div)`
   display: flex;
   align-items: center;
   gap: 12px;
-  box-shadow: ${props => props.theme.shadow.sm};
+  box-shadow: 0 2px 4px rgba(0,0,0,0.05);
 `
 
 const InfoIcon = styled.div`

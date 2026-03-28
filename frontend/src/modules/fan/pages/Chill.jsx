@@ -95,7 +95,7 @@ const EventCard = styled(motion.div)`
   border-radius: 20px;
   margin-bottom: 16px;
   overflow: hidden;
-  box-shadow: ${props => props.theme.shadow.sm};
+  box-shadow: 0 2px 4px rgba(0,0,0,0.05);
 `
 
 const EventImage = styled.div`

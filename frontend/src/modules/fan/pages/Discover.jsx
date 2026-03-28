@@ -52,7 +52,7 @@ const Card = styled(motion.div)`
   background: ${props => props.theme.surface};
   border-radius: 24px;
   overflow: hidden;
-  box-shadow: ${props => props.theme.shadow.xl};
+  box-shadow: 0 20px 25px rgba(0,0,0,0.15);
   cursor: pointer;
 `
 
@@ -143,7 +143,7 @@ const ActionButton = styled(motion.button)`
   border: none;
   font-size: 28px;
   cursor: pointer;
-  box-shadow: ${props => props.theme.shadow.lg};
+  box-shadow: 0 10px 15px rgba(0,0,0,0.1);
   
   ${props => props.type === 'like' && `
     background: #FF6B35;
