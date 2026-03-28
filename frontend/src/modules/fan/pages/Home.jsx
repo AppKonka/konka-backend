@@ -56,7 +56,7 @@ const TabButton = styled(motion.button)`
   font-weight: 500;
   white-space: nowrap;
   cursor: pointer;
-  box-shadow: ${props => props.active ? 'none' : props.theme.shadow.sm};
+  box-shadow: ${props => props.active ? 'none' : '0 2px 4px rgba(0,0,0,0.05)'};
 `
 
 const ModeSelector = styled.div`
