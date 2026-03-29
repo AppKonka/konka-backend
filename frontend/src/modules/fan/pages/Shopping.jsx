@@ -1,5 +1,5 @@
 // src/modules/fan/pages/Shopping.jsx
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback, useRef } from 'react'
 import styled from 'styled-components'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Header } from '../../shared/components/layout/Header'
@@ -9,6 +9,18 @@ import { Button } from '../../shared/components/ui/Button'
 import { useAuth } from '../../shared/context/AuthContext'
 import { supabase } from '../../../config/supabase'
 import { toast } from 'react-hot-toast'
+
+// Import Leaflet pour OpenStreetMap
+import L from 'leaflet'
+import 'leaflet/dist/leaflet.css'
+
+// Correction des icônes par défaut de Leaflet
+delete L.Icon.Default.prototype._getIconUrl
+L.Icon.Default.mergeOptions({
+  iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon-2x.png',
+  iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon.png',
+  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png',
+})
 
 const Container = styled.div`
   min-height: 100vh;
@@ -227,7 +239,88 @@ const VoiceClose = styled.button`
   cursor: pointer;
 `
 
-const GPSButton = styled(motion.button)`
+// Styles pour la carte GPS
+const GPSModal = styled(motion.div)`
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0,0,0,0.9);
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+`
+
+const GPSHeader = styled.div`
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px;
+  background: ${props => props.theme.surface};
+  border-bottom: 1px solid ${props => props.theme.border};
+`
+
+const GPSTitle = styled.h3`
+  font-size: 18px;
+  font-weight: 600;
+  color: ${props => props.theme.text};
+`
+
+const GPSCloseButton = styled(motion.button)`
+  background: none;
+  border: none;
+  font-size: 24px;
+  cursor: pointer;
+  color: ${props => props.theme.text};
+`
+
+const GPSMapContainer = styled.div`
+  flex: 1;
+  width: 100%;
+  background: #f0f0f0;
+`
+
+const GPSControls = styled.div`
+  position: absolute;
+  bottom: 20px;
+  right: 20px;
+  z-index: 1000;
+`
+
+const GPSLocationButton = styled(motion.button)`
+  width: 48px;
+  height: 48px;
+  border-radius: 24px;
+  background: ${props => props.theme.surface};
+  border: none;
+  font-size: 24px;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+`
+
+const GPSInfo = styled.div`
+  position: absolute;
+  bottom: 20px;
+  left: 20px;
+  right: 80px;
+  background: ${props => props.theme.surface};
+  border-radius: 12px;
+  padding: 12px;
+  z-index: 1000;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+`
+
+const GPSAddress = styled.p`
+  font-size: 12px;
+  color: ${props => props.theme.textSecondary};
+  margin-top: 4px;
+`
+
+const GPSButtonStyled = styled(motion.button)`
   position: fixed;
   bottom: 90px;
   right: 20px;
@@ -288,6 +381,16 @@ const Shopping = () => {
   const [isListening, setIsListening] = useState(false)
   const [voiceText, setVoiceText] = useState('')
   const [loading, setLoading] = useState(true)
+  
+  // États pour le GPS
+  const [showGPSModal, setShowGPSModal] = useState(false)
+  const [userLocation, setUserLocation] = useState(null)
+  const [locationError, setLocationError] = useState(null)
+  const [locationAddress, setLocationAddress] = useState('')
+  const [isLocating, setIsLocating] = useState(false)
+  const mapRef = useRef(null)
+  const mapInstanceRef = useRef(null)
+  const markerRef = useRef(null)
   
   const { user } = useAuth()
 
@@ -375,7 +478,6 @@ const Shopping = () => {
     }
     
     try {
-      // Vérifier si le produit est déjà dans le panier
       const existingItem = cart.find(item => item.product_id === product.id)
       
       if (existingItem) {
@@ -472,7 +574,7 @@ const Shopping = () => {
         const text = event.results[0][0].transcript
         setVoiceText(text)
         setSearchQuery(text)
-        toast.info(`Recherche: "${text}"`)
+        toast(`Recherche: "${text}"`)
         console.log('🎤 Recherche vocale:', text)
         setTimeout(() => {
           setIsListening(false)
@@ -493,14 +595,144 @@ const Shopping = () => {
     }
   }
 
-  const handleGPS = () => {
-    console.log('🗺️ Ouverture GPS Shopping')
-    toast.info('Fonctionnalité GPS Shopping à venir')
+  // Fonction pour obtenir la position GPS
+  const getCurrentLocation = () => {
+    setIsLocating(true)
+    setLocationError(null)
+    
+    if (!navigator.geolocation) {
+      setLocationError('La géolocalisation n\'est pas supportée par votre navigateur')
+      setIsLocating(false)
+      toast.error('Géolocalisation non supportée')
+      return
+    }
+    
+    navigator.geolocation.getCurrentPosition(
+      async (position) => {
+        const { latitude, longitude } = position.coords
+        const location = { lat: latitude, lng: longitude }
+        setUserLocation(location)
+        setIsLocating(false)
+        
+        // Centrer la carte sur la position
+        if (mapInstanceRef.current) {
+          mapInstanceRef.current.setView([latitude, longitude], 15)
+          
+          // Ajouter ou mettre à jour le marqueur
+          if (markerRef.current) {
+            markerRef.current.setLatLng([latitude, longitude])
+          } else {
+            const customIcon = L.divIcon({
+              html: '<div style="background-color: #FF6B35; width: 24px; height: 24px; border-radius: 50%; border: 3px solid white; box-shadow: 0 2px 4px rgba(0,0,0,0.2);"></div>',
+              className: 'custom-marker',
+              iconSize: [24, 24],
+              iconAnchor: [12, 12]
+            })
+            markerRef.current = L.marker([latitude, longitude], { icon: customIcon })
+              .addTo(mapInstanceRef.current)
+              .bindPopup('Vous êtes ici')
+              .openPopup()
+          }
+        }
+        
+        // Obtenir l'adresse via reverse geocoding (simulé)
+        setLocationAddress(`${latitude.toFixed(4)}, ${longitude.toFixed(4)}`)
+        
+        toast.success('Position obtenue avec succès')
+        console.log('📍 Position GPS:', { latitude, longitude })
+      },
+      (error) => {
+        setIsLocating(false)
+        let message = 'Erreur de géolocalisation'
+        switch (error.code) {
+          case error.PERMISSION_DENIED:
+            message = 'Vous avez refusé l\'accès à la localisation'
+            break
+          case error.POSITION_UNAVAILABLE:
+            message = 'Position indisponible'
+            break
+          case error.TIMEOUT:
+            message = 'Délai d\'attente dépassé'
+            break
+        }
+        setLocationError(message)
+        toast.error(message)
+        console.error('Geolocation error:', error)
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 10000,
+        maximumAge: 0
+      }
+    )
+  }
+
+  // Initialiser la carte GPS
+  const initGPSMap = () => {
+    if (!mapRef.current || mapInstanceRef.current) return
+    
+    const defaultLocation = userLocation || { lat: 48.8566, lng: 2.3522 } // Paris par défaut
+    
+    const map = L.map(mapRef.current).setView([defaultLocation.lat, defaultLocation.lng], 13)
+    mapInstanceRef.current = map
+    
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+      maxZoom: 19,
+    }).addTo(map)
+    
+    if (userLocation) {
+      const customIcon = L.divIcon({
+        html: '<div style="background-color: #FF6B35; width: 24px; height: 24px; border-radius: 50%; border: 3px solid white; box-shadow: 0 2px 4px rgba(0,0,0,0.2);"></div>',
+        className: 'custom-marker',
+        iconSize: [24, 24],
+        iconAnchor: [12, 12]
+      })
+      markerRef.current = L.marker([userLocation.lat, userLocation.lng], { icon: customIcon })
+        .addTo(map)
+        .bindPopup('Vous êtes ici')
+        .openPopup()
+    }
+  }
+
+  // Effet pour initialiser la carte quand le modal s'ouvre
+  useEffect(() => {
+    if (showGPSModal && mapRef.current && !mapInstanceRef.current) {
+      setTimeout(() => {
+        initGPSMap()
+      }, 100)
+    }
+    
+    return () => {
+      if (mapInstanceRef.current && !showGPSModal) {
+        mapInstanceRef.current.remove()
+        mapInstanceRef.current = null
+        markerRef.current = null
+      }
+    }
+  }, [showGPSModal, userLocation])
+
+  const handleOpenGPS = () => {
+    setShowGPSModal(true)
+    getCurrentLocation()
+  }
+
+  const handleCenterOnUser = () => {
+    if (userLocation && mapInstanceRef.current) {
+      mapInstanceRef.current.setView([userLocation.lat, userLocation.lng], 15)
+      if (markerRef.current) {
+        markerRef.current.openPopup()
+      }
+      toast('Centrage sur votre position')
+      console.log('🎯 Centrage sur la position utilisateur')
+    } else {
+      getCurrentLocation()
+    }
   }
 
   const handleViewCart = () => {
     console.log('🛒 Affichage du panier')
-    toast.info('Fonctionnalité de panier à venir')
+    toast('Fonctionnalité de panier à venir')
   }
 
   if (loading && products.length === 0) {
@@ -617,12 +849,12 @@ const Shopping = () => {
         </CartIndicator>
       )}
       
-      <GPSButton
-        onClick={handleGPS}
+      <GPSButtonStyled
+        onClick={handleOpenGPS}
         whileTap={{ scale: 0.9 }}
       >
         🗺️
-      </GPSButton>
+      </GPSButtonStyled>
       
       <BottomNavigation />
       
@@ -648,6 +880,48 @@ const Shopping = () => {
             {voiceText || "Parlez maintenant..."}
           </VoiceText>
         </VoiceModal>
+      )}
+      
+      {showGPSModal && (
+        <GPSModal
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+        >
+          <GPSHeader>
+            <GPSTitle>Magasins à proximité</GPSTitle>
+            <GPSCloseButton onClick={() => setShowGPSModal(false)} whileTap={{ scale: 0.9 }}>
+              ✕
+            </GPSCloseButton>
+          </GPSHeader>
+          
+          <GPSMapContainer ref={mapRef} />
+          
+          <GPSControls>
+            <GPSLocationButton onClick={handleCenterOnUser} whileTap={{ scale: 0.9 }}>
+              📍
+            </GPSLocationButton>
+          </GPSControls>
+          
+          <GPSInfo>
+            {isLocating ? (
+              <div>Recherche de votre position...</div>
+            ) : locationError ? (
+              <div style={{ color: '#FF4444' }}>{locationError}</div>
+            ) : userLocation ? (
+              <>
+                <div style={{ fontWeight: 600 }}>📍 Votre position</div>
+                <GPSAddress>Lat: {userLocation.lat.toFixed(4)} | Lng: {userLocation.lng.toFixed(4)}</GPSAddress>
+                {locationAddress && <GPSAddress>{locationAddress}</GPSAddress>}
+                <div style={{ fontSize: 11, color: '#888', marginTop: 8 }}>
+                  Magasins à proximité bientôt disponibles
+                </div>
+              </>
+            ) : (
+              <div>Cliquez sur le bouton 📍 pour obtenir votre position</div>
+            )}
+          </GPSInfo>
+        </GPSModal>
       )}
     </Container>
   )

@@ -1,10 +1,12 @@
 // src/modules/fan/components/VideoFeed/VideoCard.jsx
-import React, { useRef, useState } from 'react'
+import React, { useRef, useState, useEffect } from 'react'
 import styled from 'styled-components'
 import { motion, AnimatePresence } from 'framer-motion'
 import ReactPlayer from 'react-player'
 import { Avatar } from '../../../shared/components/ui/Avatar'
 import { useTheme } from '../../../shared/context/ThemeContext'
+import { offlineService } from '../../../../services/offline/offline_service'
+import { toast } from 'react-hot-toast'
 
 const Container = styled.div`
   position: relative;
@@ -125,16 +127,42 @@ export const VideoCard = ({
   const [liked, setLiked] = useState(false)
   const [showHeart, setShowHeart] = useState(false)
   const [heartPosition, setHeartPosition] = useState({ x: 0, y: 0 })
+  const [isDownloaded, setIsDownloaded] = useState(false)
+  const [localUrl, setLocalUrl] = useState(null)
   const playerRef = useRef(null)
   const containerRef = useRef(null)
   const theme = useTheme()
+
+  // Vérifier si la vidéo est déjà téléchargée
+  useEffect(() => {
+    const checkDownload = async () => {
+      const offlineVideo = await offlineService.getVideoOffline(video.id)
+      if (offlineVideo && offlineVideo.video_blob) {
+        setIsDownloaded(true)
+        const url = URL.createObjectURL(offlineVideo.video_blob)
+        setLocalUrl(url)
+      } else {
+        setIsDownloaded(false)
+        setLocalUrl(null)
+      }
+    }
+    checkDownload()
+  }, [video.id])
+
+  // Nettoyer l'URL lors du démontage
+  useEffect(() => {
+    return () => {
+      if (localUrl) {
+        URL.revokeObjectURL(localUrl)
+      }
+    }
+  }, [localUrl])
 
   const handleDoubleClick = (e) => {
     if (!liked) {
       setLiked(true)
       onLike()
       
-      // Position du cœur au clic
       const rect = containerRef.current.getBoundingClientRect()
       setHeartPosition({
         x: e.clientX - rect.left,
@@ -152,12 +180,35 @@ export const VideoCard = ({
     }
   }
 
+  const handleDownload = async () => {
+    if (isDownloaded) {
+      await offlineService.removeContent(video.id, 'video')
+      setIsDownloaded(false)
+      toast.success('Vidéo supprimée du stockage local')
+    } else {
+      const success = await offlineService.saveVideoForOffline(video)
+      if (success) {
+        setIsDownloaded(true)
+        const offlineVideo = await offlineService.getVideoOffline(video.id)
+        if (offlineVideo && offlineVideo.video_blob) {
+          const url = URL.createObjectURL(offlineVideo.video_blob)
+          setLocalUrl(url)
+        }
+        toast.success('Vidéo téléchargée pour lecture hors-ligne')
+      } else {
+        toast.error('Erreur lors du téléchargement')
+      }
+    }
+  }
+
+  const videoUrl = localUrl && !navigator.onLine ? localUrl : video.video_url
+
   return (
     <Container ref={containerRef} onDoubleClick={handleDoubleClick}>
       <VideoWrapper>
         <ReactPlayer
           ref={playerRef}
-          url={video.video_url}
+          url={videoUrl}
           playing={isActive}
           loop={false}
           width="100%"
@@ -216,6 +267,10 @@ export const VideoCard = ({
         <ActionButton onClick={onShare} whileTap={{ scale: 0.9 }}>
           <div className="icon">🔁</div>
           <div className="count">{video.share_count}</div>
+        </ActionButton>
+        
+        <ActionButton onClick={handleDownload} whileTap={{ scale: 0.9 }} title={isDownloaded ? 'Supprimer du hors-ligne' : 'Télécharger pour hors-ligne'}>
+          <div className="icon">{isDownloaded ? '📀' : '💾'}</div>
         </ActionButton>
         
         <ActionButton whileTap={{ scale: 0.9 }}>

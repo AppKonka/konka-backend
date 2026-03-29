@@ -1,5 +1,5 @@
 // src/modules/fan/pages/Settings.jsx
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import styled from 'styled-components'
 import { motion } from 'framer-motion'
@@ -9,6 +9,8 @@ import { useAuth } from '../../shared/context/AuthContext'
 import { useTheme } from '../../shared/context/ThemeContext'
 import { supabase } from '../../../config/supabase'
 import { toast } from 'react-hot-toast'
+import { exportService } from '../../shared/services/exportService'
+import { offlineService } from "../../../services/offline/offline_service";
 
 const Container = styled.div`
   min-height: 100vh;
@@ -149,6 +151,15 @@ const Settings = () => {
   const { isDark, toggleTheme } = useTheme()
   const [notificationsEnabled, setNotificationsEnabled] = useState(true)
   const [privateMode, setPrivateMode] = useState(false)
+  const [storageUsage, setStorageUsage] = useState({ total: 0, videos: 0, tracks: 0, humanReadable: '0 B' })
+
+  useEffect(() => {
+    const loadStorage = async () => {
+      const usage = await offlineService.getStorageUsage()
+      setStorageUsage(usage)
+    }
+    loadStorage()
+  }, [])
 
   const handleLogout = async () => {
     await logout()
@@ -173,6 +184,23 @@ const Settings = () => {
         toast.error('Erreur lors de la suppression')
       }
     }
+  }
+
+  const handleExportData = async () => {
+    try {
+      toast.loading('Préparation de l\'export...', { id: 'export' })
+      const blob = await exportService.exportUserData(user.id, 'json')
+      exportService.downloadBlob(blob, `konka_export_${new Date().toISOString()}.json`)
+      toast.success('Export terminé !', { id: 'export' })
+    } catch (error) {
+      console.error('Erreur lors de l\'export:', error)
+      toast.error('Erreur lors de l\'export', { id: 'export' })
+    }
+  }
+
+  const handleStorageInfo = async () => {
+    const usage = await offlineService.getStorageUsage()
+    toast.info(`${usage.videos} vidéo(s), ${usage.tracks} morceau(x) - ${usage.humanReadable}`)
   }
 
   const menuSections = [
@@ -212,7 +240,8 @@ const Settings = () => {
           </Switch>
         ) },
         { icon: '📍', label: 'Localisation', action: () => navigate('/fan/settings/location'), value: 'Activée' },
-        { icon: '📊', label: 'Mes données', action: () => navigate('/fan/settings/data') },
+        { icon: '📥', label: 'Exporter mes données', action: handleExportData, value: 'Télécharger' },
+        { icon: '💾', label: 'Stockage hors-ligne', action: handleStorageInfo, value: storageUsage.humanReadable },
       ]
     },
     {

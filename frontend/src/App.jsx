@@ -1,11 +1,12 @@
 // frontend/src/App.jsx
-import React, { Suspense, lazy } from 'react'
+import React, { Suspense, lazy, useEffect } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { Toaster } from 'react-hot-toast'
 import { useAuth } from './modules/shared/context/AuthContext'
 import { Loader } from './modules/shared/components/ui/Loader'
 import { SafeArea } from './modules/shared/components/navigation/SafeArea'
+import { pushNotifications } from './services/notifications/push_notifications'
 
 const CONFIG = {
   supabaseUrl: import.meta.env.VITE_SUPABASE_URL,
@@ -99,6 +100,13 @@ const queryClient = new QueryClient({
 
 function App() {
   const { user, loading, userRole } = useAuth()
+
+  // Initialiser les notifications push quand l'utilisateur est connecté
+  useEffect(() => {
+    if (user) {
+      pushNotifications.init().catch(console.error)
+    }
+  }, [user])
 
   if (loading) {
     return <Loader fullScreen />

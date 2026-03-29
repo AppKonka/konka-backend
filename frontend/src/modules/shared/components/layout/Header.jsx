@@ -1,11 +1,12 @@
 // src/modules/shared/components/layout/Header.jsx
-import React from 'react'
+import React, { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import styled from 'styled-components'
-import { motion } from 'framer-motion'
+import { motion, AnimatePresence } from 'framer-motion'
 import { Avatar } from '../ui/Avatar'
 import { useAuth } from '../../context/AuthContext'
 import { useTheme } from '../../context/ThemeContext'
+import { SearchBar } from '../SearchBar'
 
 const HeaderContainer = styled(motion.header)`
   position: sticky;
@@ -58,10 +59,36 @@ const IconButton = styled(motion.button)`
   }
 `
 
+// Composants pour le modal de recherche
+const SearchModalOverlay = styled(motion.div)`
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: ${props => props.theme.background}CC;
+  backdrop-filter: blur(5px);
+  z-index: 1000;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 80px 20px;
+`
+
+const SearchModalContainer = styled.div`
+  width: 100%;
+  max-width: 600px;
+  background: ${props => props.theme.surface};
+  border-radius: 24px;
+  padding: 20px;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+`
+
 export const Header = ({ title, showBack, showProfile, onBack }) => {
   const navigate = useNavigate()
   const { userProfile, logout } = useAuth()
   const { toggleTheme, isDark } = useTheme()
+  const [showSearch, setShowSearch] = useState(false)
 
   const handleBack = () => {
     if (onBack) {
@@ -81,36 +108,56 @@ export const Header = ({ title, showBack, showProfile, onBack }) => {
   }
 
   return (
-    <HeaderContainer
-      initial={{ y: -100 }}
-      animate={{ y: 0 }}
-      transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-    >
-      <LeftSection>
-        {showBack && (
-          <IconButton onClick={handleBack} whileTap={{ scale: 0.9 }}>
-            ←
+    <>
+      <HeaderContainer
+        initial={{ y: -100 }}
+        animate={{ y: 0 }}
+        transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+      >
+        <LeftSection>
+          {showBack && (
+            <IconButton onClick={handleBack} whileTap={{ scale: 0.9 }}>
+              ←
+            </IconButton>
+          )}
+          <Title>{title || 'KONKA'}</Title>
+        </LeftSection>
+        
+        <RightSection>
+          <IconButton onClick={() => setShowSearch(true)} whileTap={{ scale: 0.9 }} title="Rechercher">
+            🔍
           </IconButton>
-        )}
-        <Title>{title || 'KONKA'}</Title>
-      </LeftSection>
+          <IconButton onClick={toggleTheme} whileTap={{ scale: 0.9 }} title="Changer le thème">
+            {isDark ? '☀️' : '🌙'}
+          </IconButton>
+          <IconButton onClick={handleLogout} whileTap={{ scale: 0.9 }} title="Se déconnecter">
+            🚪
+          </IconButton>
+          {showProfile && userProfile && (
+            <Avatar
+              src={userProfile.avatar_url}
+              name={userProfile.display_name}
+              size={36}
+              onClick={handleProfile}
+            />
+          )}
+        </RightSection>
+      </HeaderContainer>
       
-      <RightSection>
-        <IconButton onClick={toggleTheme} whileTap={{ scale: 0.9 }}>
-          {isDark ? '☀️' : '🌙'}
-        </IconButton>
-        <IconButton onClick={handleLogout} whileTap={{ scale: 0.9 }} title="Se déconnecter">
-          🚪
-        </IconButton>
-        {showProfile && userProfile && (
-          <Avatar
-            src={userProfile.avatar_url}
-            name={userProfile.display_name}
-            size={36}
-            onClick={handleProfile}
-          />
+      <AnimatePresence>
+        {showSearch && (
+          <SearchModalOverlay
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={() => setShowSearch(false)}
+          >
+            <SearchModalContainer onClick={(e) => e.stopPropagation()}>
+              <SearchBar onClose={() => setShowSearch(false)} />
+            </SearchModalContainer>
+          </SearchModalOverlay>
         )}
-      </RightSection>
-    </HeaderContainer>
+      </AnimatePresence>
+    </>
   )
 }

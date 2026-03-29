@@ -24,7 +24,7 @@ from app.config import settings
 from app.database import supabase, check_db_connection
 from app.routers import (
     auth, users, content, music, shop, chat, match, chill, 
-    artist, seller, notifications, analytics, payments
+    artist, seller, notifications, analytics, payments, twilio  # ← AJOUT DE twilio
 )
 from app.core.security import verify_token
 
@@ -105,6 +105,7 @@ app.include_router(seller.router, prefix="/api/seller", tags=["Seller"])
 app.include_router(notifications.router, prefix="/api/notifications", tags=["Notifications"])
 app.include_router(analytics.router, prefix="/api/analytics", tags=["Analytics"])
 app.include_router(payments.router, prefix="/api/payments", tags=["Payments"])
+app.include_router(twilio.router, prefix="/api/twilio", tags=["Twilio"])  # ← AJOUT DU ROUTEUR TWILIO
 
 # Exception handlers
 @app.exception_handler(HTTPException)

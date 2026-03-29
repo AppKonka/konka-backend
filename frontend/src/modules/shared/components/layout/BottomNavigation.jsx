@@ -47,25 +47,28 @@ export const BottomNavigation = () => {
         return [
           { path: '/fan/home', icon: '🏠', label: 'Accueil' },
           { path: '/fan/shopping', icon: '🛍️', label: 'Shopping' },
-          { path: '/fan/discover', icon: '✨', label: 'Publier' },
-          { path: '/fan/messages', icon: '💬', label: 'Rencontre' },
+          { path: '/fan/discover', icon: '✨', label: 'Rencontre' },
+          { path: '/fan/messages', icon: '💬', label: 'Messages' },
           { path: '/fan/music', icon: '🎵', label: 'Musique' },
+          { path: '/fan/chill', icon: '🌴', label: 'Chill' },
         ]
       case 'artist':
         return [
           { path: '/artist/dashboard', icon: '🏠', label: 'Accueil' },
           { path: '/fan/shopping', icon: '🛍️', label: 'Shopping' },
-          { path: '/fan/discover', icon: '✨', label: 'Publier' },
+          { path: '/fan/discover', icon: '✨', label: 'Rencontre' },
           { path: '/fan/music', icon: '🎵', label: 'Musique' },
-          { path: '/artist/dashboard', icon: '📊', label: 'Tableau' },
+          { path: '/fan/chill', icon: '🌴', label: 'Chill' },
+          { path: '/artist/dashboard', icon: '📊', label: 'Stats' },
         ]
       case 'seller':
         return [
           { path: '/fan/home', icon: '🏠', label: 'Accueil' },
-          { path: '/seller/dashboard', icon: '🛍️', label: 'Shopping' },
-          { path: '/fan/discover', icon: '✨', label: 'Publier' },
+          { path: '/seller/dashboard', icon: '🛍️', label: 'Boutique' },
+          { path: '/fan/discover', icon: '✨', label: 'Rencontre' },
           { path: '/fan/messages', icon: '💬', label: 'Messages' },
-          { path: '/seller/dashboard', icon: '📦', label: 'Espace' },
+          { path: '/fan/chill', icon: '🌴', label: 'Chill' },
+          { path: '/seller/dashboard', icon: '📦', label: 'Commandes' },
         ]
       default:
         return []

@@ -342,6 +342,8 @@ const Profile = () => {
       navigate('/fan/profile/following')
     } else if (type === 'matches') {
       navigate('/fan/messages')
+    } else if (type === 'settings') {
+      navigate('/fan/settings')
     }
   }
 
@@ -357,7 +359,6 @@ const Profile = () => {
 
   // Utiliser updateProfile pour mettre à jour le profil si nécessaire
   const handleUpdateXP = async () => {
-    // Exemple d'utilisation de updateProfile
     const newXP = (userProfile?.xp_points || 0) + 10
     await updateProfile({ xp_points: newXP })
     console.log('✨ XP mis à jour:', newXP)
@@ -419,6 +420,10 @@ const Profile = () => {
           <StatItem onClick={() => handleStatClick('matches')} whileTap={{ scale: 0.95 }}>
             <StatValue>{stats.matches}</StatValue>
             <StatLabel>Smatches</StatLabel>
+          </StatItem>
+          <StatItem onClick={() => handleStatClick('settings')} whileTap={{ scale: 0.95 }}>
+            <StatValue>⚙️</StatValue>
+            <StatLabel>Paramètres</StatLabel>
           </StatItem>
         </StatsContainer>
         
