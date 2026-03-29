@@ -1,3 +1,4 @@
+/* eslint-disable no-undef */
 // frontend/public/firebase-messaging-sw.js
 // Service Worker pour les notifications push Firebase
 
