@@ -60,7 +60,7 @@ const IconButton = styled(motion.button)`
 
 export const Header = ({ title, showBack, showProfile, onBack }) => {
   const navigate = useNavigate()
-  const { userProfile } = useAuth()
+  const { userProfile, logout } = useAuth()
   const { toggleTheme, isDark } = useTheme()
 
   const handleBack = () => {
@@ -73,6 +73,11 @@ export const Header = ({ title, showBack, showProfile, onBack }) => {
 
   const handleProfile = () => {
     navigate('/fan/profile')
+  }
+
+  const handleLogout = async () => {
+    await logout()
+    navigate('/')
   }
 
   return (
@@ -93,6 +98,9 @@ export const Header = ({ title, showBack, showProfile, onBack }) => {
       <RightSection>
         <IconButton onClick={toggleTheme} whileTap={{ scale: 0.9 }}>
           {isDark ? '☀️' : '🌙'}
+        </IconButton>
+        <IconButton onClick={handleLogout} whileTap={{ scale: 0.9 }} title="Se déconnecter">
+          🚪
         </IconButton>
         {showProfile && userProfile && (
           <Avatar
